@@ -1,0 +1,204 @@
+import { assert } from "cc";
+import { DEBUG } from "cc/env";
+import { EventDispatcher } from "./core/event-dispatcher";
+import { ColyseusSdk } from "./client";
+import { EventOverview, S2C_Replay } from "./colyseus";
+import { S2C_MESSAGE } from "./core/misc";
+import { logger } from "./core/log";
+
+export class Room extends EventDispatcher<EventOverview> implements IGameFramework.IDisposable {
+    protected _inst!: Colyseus.Room;
+    protected _name: string = "";
+    private _disposed: boolean = false;
+    private _sdk!: ColyseusSdk;
+
+    public get name(): string {
+        return this._inst?.name ?? this._name;
+    }
+
+    public get roomId(): string {
+        return this._inst?.roomId ?? "";
+    }
+
+    public get isDisposed(): boolean { return this._disposed; }
+
+    /**
+     * 注入自己的消息解码
+     * 
+     * 解码S2C_MESSAGE
+     * 
+     * ```ts
+     * let s2c: S2C_Replay;
+     * try {
+     *     s2c = S2C_Replay.fromBinary(m);
+     * } catch (error) {
+     *     logger.error(`${this._name} can not parse S2C_MESSAGE, because it is invalid.`, m);
+     *     return;
+     * }
+     * 
+     * let unpack: unknown = null;
+     * if (s2c.resCode == 0) {
+     *     DEBUG && assert(!!decoder, "IGameFramework.ISerializable not found.");
+     *     unpack = decoder.decoder(s2c.resBodyId, s2c.resBody);
+     * }
+     *
+     * if (this.has(`$${s2c.resUniqueId}`)) {
+     *     this.dispatch(`$${s2c.resUniqueId}`, {
+     *         room: this,
+     *         reply: s2c,
+     *         message: unpack
+     *     });
+     *     return;
+     * }
+     *
+     * const fn = this![s2c.resBodyId as keyof ThisType<Room>] as (message: S2C_Replay, data: unknown) => void;
+     * if (fn) {
+     *     fn.call(this, s2c, unpack);
+     *     return;
+     * } else {
+     *     this.dispatch(String(s2c.resBodyId), unpack);
+     *     return;
+     * }
+     *
+     * if (s2c) {
+     *     return s2c;
+     * }
+     * ```
+     *
+     * @memberof Room
+     */
+    public static decoderS2CMessageHandle: (t: typeof S2C_MESSAGE, m: Uint8Array) => void = null!;
+
+    public get reqUniqueId() {
+        return this._sdk.reqUniqueId;
+    }
+
+    public dispose(): void {
+        if (this._disposed) return;
+        this._disposed = true;
+        this._inst.connection.close(4000, "close");
+    }
+
+    public constructor(name: string, inst: Colyseus.Room) {
+        super();
+
+        this._name = name;
+        this._inst = inst;
+    }
+
+    public applyMessage(replay: S2C_Replay, message: unknown): void {
+
+    }
+
+    public onInit(): void {
+
+    }
+
+    public get isOpen(): boolean {
+        if (!this._inst) return false;
+        return this._inst.connection.isOpen;
+    }
+
+    public send(type: string, message: any): void {
+        if (!this._inst) {
+            logger.warn(`${this._name} can not send message, because it is closed.`);
+        }
+
+        if (message instanceof Uint8Array) {
+            this._inst.sendBytes(type, message);
+        } else {
+            this._inst.send(type, message);
+        }
+    }
+
+    public cast<T>(): Colyseus.Room<T> {
+        return this._inst as Colyseus.Room<T>;
+    }
+
+    public listen(sdk: ColyseusSdk): this {
+        this.onInit();
+
+        this._sdk = sdk;
+
+        const room = this._inst;
+        const dispatcher = this;
+
+        // 监听所有未知信息
+        room.onMessage("*", (t, m) => {
+            if (typeof t == "string" || m instanceof Uint8Array) {
+                // 优先解析S2C_MESSAGE
+                if (t == S2C_MESSAGE || m instanceof Uint8Array) {
+                    DEBUG && assert(m instanceof Uint8Array, "s2cmsg must be ArrayBuffer");
+
+                    if (Room.decoderS2CMessageHandle) {
+                        m = Room.decoderS2CMessageHandle?.call(this, t as typeof S2C_MESSAGE, m) ?? m;
+                        return;
+                    }
+                }
+
+                // 直接调用房间实现上的函数
+                const fn = dispatcher[t as keyof this] as (message: unknown) => void;
+                if (fn) {
+                    fn.call(dispatcher, m);
+                    return;
+                }
+
+                const tEvent = t as string;
+
+                // 其次解析自定义信息
+                if (dispatcher.has(tEvent)) {
+                    dispatcher.dispatch(tEvent, {
+                        room: this,
+                        message: m
+                    });
+                    return;
+                }
+
+                // 最后解析未知信息
+                if (dispatcher.has("onMessage")) {
+                    const message = {
+                        room: this,
+                        type: tEvent,
+                        message: m
+                    };
+                    dispatcher.dispatch("onMessage", message);
+                    return;
+                }
+            }
+
+            // 如果上面3个解析都不匹配，只能打印一个日志看看到底是什么信息
+            // 这个信息是no handled message
+            logger.log(`${this._name} match all message: *`, t, m);
+        });
+
+        // 监听错误
+        room.onError((code, msg) => {
+            if (dispatcher.has("onError")) {
+                const message = {
+                    room: this,
+                    code: code,
+                    message: msg
+                };
+                dispatcher.dispatch("onError", message);
+            } else {
+                logger.warn(`${this._name} error:`, code, msg);
+            }
+        });
+
+        // 监听离开
+        room.onLeave((code) => {
+            if (dispatcher.has("onLeave")) {
+                const message = {
+                    room: this,
+                    code: code,
+                    message: undefined
+                };
+                dispatcher.dispatch("onLeave", message);
+            } else {
+                logger.warn(`${this._name} leave:`, code);
+            }
+        });
+
+        return this;
+    }
+}

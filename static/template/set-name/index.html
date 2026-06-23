@@ -1,0 +1,41 @@
+<div id="app" class="container">
+    <h2>组件命名</h2>
+    
+    <div class="form-group">
+        <div class="form-item">
+            <label>类型：</label>
+            <ui-select v-model="selectedType" @change="updateType">
+                <optgroup label="UI 组件">
+                    <option v-for="(type, key) in uiComponents" :key="key" :value="key">{{ key }} ({{ type }})</option>
+                </optgroup>
+                <optgroup label="多媒体组件">
+                    <option v-for="(type, key) in mediaComponents" :key="key" :value="key">{{ key }} ({{ type }})</option>
+                </optgroup>
+                <optgroup label="渲染相关">
+                    <option v-for="(type, key) in renderComponents" :key="key" :value="key">{{ key }} ({{ type }})</option>
+                </optgroup>
+                <optgroup label="动画相关">
+                    <option v-for="(type, key) in animationComponents" :key="key" :value="key">{{ key }} ({{ type }})</option>
+                </optgroup>
+                <optgroup label="其他">
+                    <option v-for="(type, key) in otherComponents" :key="key" :value="key">{{ key }} ({{ type }})</option>
+                </optgroup>
+            </ui-select>
+        </div>
+        
+        <div class="form-item">
+            <label>命名：</label>
+            <ui-input v-model="customName" @change="updateName"></ui-input>
+        </div>
+        
+        <div class="form-item">
+            <label>预览：</label>
+            <div class="preview-text">_{{ selectedType }}{{ customName }}</div>
+        </div>
+    </div>
+    
+    <div class="actions">
+        <ui-button class="confirm-btn" @click="confirm">确定</ui-button>
+        <ui-button class="cancel-btn" @click="cancel">取消</ui-button>
+    </div>
+</div>

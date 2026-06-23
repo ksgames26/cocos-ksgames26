@@ -1,0 +1,202 @@
+{
+    "$schema": "./@types/schema/package/index.json",
+    "package_version": 2,
+    "name": "ksgames26",
+    "version": "1.0.0",
+    "author": "v",
+    "editor": ">=3.8.7",
+    "scripts": {
+        "preinstall": "node ./scripts/preinstall.js",
+        "build": "npx tsc"
+    },
+    "description": "i18n:ksgames26.description",
+    "main": "./dist/main.js",
+    "dependencies": {
+        "fs-extra": "^11.3.0",
+        "vue": "^3.5.13",
+        "xlsx": "^0.18.5"
+    },
+    "devDependencies": {
+        "@cocos/creator-types": "^3.8.7",
+        "@types/fs-extra": "^11.0.4",
+        "@types/node": "^18.17.1",
+        "ts-morph": "^25.0.1",
+        "typescript": "^5.8.2"
+    },
+    "panels": {
+        "default": {
+            "title": "ksgames26 Default Panel",
+            "type": "dockable",
+            "main": "dist/panels/default",
+            "size": {
+                "min-width": 400,
+                "min-height": 300,
+                "width": 1024,
+                "height": 600
+            }
+        },
+        "set-name": {
+            "title": "i18n:ksgames26.panels.setName",
+            "type": "dockable",
+            "main": "dist/panels/set-name",
+            "size": {
+                "min-width": 300,
+                "min-height": 300,
+                "width": 300,
+                "height": 300
+            }
+        }
+    },
+    "contributions": {
+        "inspector": {
+            "section": {
+                "node": {
+                    "ViewState": "./dist/inspector/view-state.js",
+                    "I18NLabel": "./dist/inspector/i18n-label.js",
+                    "I18NRichText": "./dist/inspector/i18n-label.js",
+                    "I18NSprite": "./dist/inspector/i18n-sprite.js"
+                }
+            }
+        },
+        "scene": {
+            "script": "./dist/scene/scene.js"
+        },
+        "profile": {
+            "project": {
+                "i18n:ksgames26.i18n_conf_path": {
+                    "default": "0-0",
+                    "message": "i18n_conf_path_changed"
+                },
+                "i18n:ksgames26.i18n_conf_parse_start_row_col": {
+                    "default": "0-0",
+                    "message": "i18n_conf_parse_start_row_col_changed"
+                },
+                "i18n:ksgames26.i18n_conf_parse_end_row_col": {
+                    "default": "0-0",
+                    "message": "i18n_conf_parse_end_row_col_changed"
+                },
+                "i18n:ksgames26.i18n_conf_default_lan": {
+                    "default": "zh",
+                    "message": "i18n_conf_default_lan_changed"
+                }
+            }
+        },
+        "project": {
+            "conf_path": {
+                "label": "i18n:ksgames26.i18n_conf_path",
+                "content": {
+                    "i18n:ksgames26.i18n_conf_path": {
+                        "ui": "ui-input"
+                    },
+                    "i18n:ksgames26.i18n_conf_parse_start_row_col": {
+                        "ui": "ui-input"
+                    },
+                    "i18n:ksgames26.i18n_conf_parse_end_row_col": {
+                        "ui": "ui-input"
+                    },
+                    "i18n:ksgames26.i18n_conf_default_lan": {
+                        "ui": "ui-input"
+                    }
+                }
+            }
+        },
+        "menu": [
+            {
+                "path": "i18n:menu.panel/ksgames26",
+                "label": "i18n:ksgames26.open_panel",
+                "message": "open-panel"
+            },
+            {
+                "path": "i18n:menu.develop/ksgames26",
+                "label": "i18n:ksgames26.send_to_panel",
+                "message": "send-to-panel"
+            },
+            {
+                "path": "i18n:ksgames26.game_framework",
+                "label": "i18n:ksgames26.createTemplate",
+                "message": "create_template"
+            },
+            {
+                "path": "i18n:ksgames26.game_framework",
+                "label": "i18n:ksgames26.i18n_conf_refresh_after_save",
+                "message": "i18n_conf_refresh_after_save_changed"
+            }
+        ],
+        "messages": {
+            "asset-db:ready": {
+                "methods": [
+                    "onAssetDBReady"
+                ]
+            },
+            "scene:ready": {
+                "methods": [
+                    "onSceneReady"
+                ]
+            },
+            "create_template": {
+                "methods": [
+                    "createTemplate"
+                ]
+            },
+            "i18n_getInfoOfI18NConf": {
+                "methods": [
+                    "getInfoOfI18NConf"
+                ]
+            },
+            "i18n_conf_path_changed": {
+                "methods": [
+                    "onI18NConfPathChanged"
+                ]
+            },
+            "i18n_conf_parse_start_row_col_changed": {
+                "methods": [
+                    "onI18NConfParseStartRowColChanged"
+                ]
+            },
+            "i18n_conf_parse_end_row_col_changed": {
+                "methods": [
+                    "onI18NConfParseEndRowColChanged"
+                ]
+            },
+            "i18n_conf_default_lan_changed": {
+                "methods": [
+                    "onI18NConfDefaultLanChanged"
+                ]
+            },
+            "i18n_conf_refresh_after_save_changed": {
+                "methods": [
+                    "onI18NConfRefreshAfterSaveChanged"
+                ]
+            },
+            "open-panel": {
+                "methods": [
+                    "openPanel"
+                ]
+            },
+            "send-to-panel": {
+                "methods": [
+                    "default.hello"
+                ]
+            }
+        },
+        "asset-db": {
+            "mount": {
+                "path": "./game-framework",
+                "readonly": false
+            }
+        },
+        "assets": {
+            "menu": {
+                "methods": "./dist/assets/assets-db.js",
+                "assetMenu": "onAssetMenu"
+            }
+        },
+        "hierarchy": {
+            "menu": {
+                "methods": "./dist/hierarchy/hierarchy-menu.js",
+                "rootMenu": "onRootMenu",
+                "nodeMenu": "onNodeMenu"
+            }
+        }
+    }
+}
