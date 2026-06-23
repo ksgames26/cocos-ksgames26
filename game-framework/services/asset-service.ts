@@ -1161,6 +1161,7 @@ export class AssetService {
 
         if (assetHandle.internet) {
             this.doReleaseAsset(null, assetHandle, doDestroy);
+            return;
         }
         const bundle = await this.getAsyncBundleUrl(assetHandle.bundle);
         this.doReleaseAsset(bundle, assetHandle, doDestroy);
@@ -1179,6 +1180,7 @@ export class AssetService {
 
         if (assetHandle.internet) {
             this.doReleaseAsset(null, assetHandle, doDestroy);
+            return;
         }
         const bundle = this.getBundleUrl(assetHandle.bundle);
         this.doReleaseAsset(bundle, assetHandle, doDestroy);

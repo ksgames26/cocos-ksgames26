@@ -793,7 +793,11 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @memberof UIService
      */
     public async closeOrPopViewInstance<T extends BaseView<U>, U extends BaseService>(view: T): Promise<boolean> {
-        return await this.closeOrPopViewName(view.viewName);
+        const key = this.getOpenViewKey(view as BaseView<BaseService>);
+        if (!key) {
+            return false;
+        }
+        return await this.closeOrPopViewName(key);
     }
 
     /**
@@ -864,7 +868,11 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @memberof UIService
      */
     public async closeViewInstanceAfter<T extends BaseView<U>, U extends BaseService>(view: T): Promise<OnCloseReturn<T, U>> {
-        return this.closeViewNameAfter(view.viewName);
+        const key = this.getOpenViewKey(view as BaseView<BaseService>);
+        if (!key) {
+            throw new Error("view not found");
+        }
+        return this.closeViewNameAfter(key);
     }
 
     /**
@@ -947,6 +955,16 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
         return view as BaseView<T>;
     }
 
+    public getOpenViewKey(view: BaseView<BaseService>): IGameFramework.Nullable<string> {
+        for (const [name, entry] of this._openingViews) {
+            if (entry.view === view) {
+                return name;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * 获取层
      *
@@ -1003,7 +1021,10 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
         for (let view of this._history) {
             view.onClose();
             view.dispose();
-            this._openingViews.delete(js.getClassName(view));
+            const key = this.getOpenViewKey(view);
+            if (key) {
+                this._openingViews.delete(key);
+            }
         }
         this._history.length = 0;
     }
@@ -1041,7 +1062,7 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @memberof UIService
      */
     private getNextView<U extends BaseService>(view: BaseView<U>): IGameFramework.Nullable<BaseView<U>> {
-        if (view.isPushPopView()) return null!;
+        if (!view.isPushPopView()) return null!;
         let curr = this._history.indexOf(view);
         if (curr + 1 >= this._history.length) return null!;
         return this._history[curr + 1] as BaseView<U>;
@@ -1056,7 +1077,7 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @memberof UIService
      */
     private getPrevView<U extends BaseService>(view: BaseView<U>): IGameFramework.Nullable<BaseView<U>> {
-        if (view.isPushPopView()) return null!;
+        if (!view.isPushPopView()) return null!;
         let curr = this._history.indexOf(view);
         if (curr - 1 < 0) return null!;
         return this._history[curr - 1] as BaseView<U>;

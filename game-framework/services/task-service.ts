@@ -575,10 +575,11 @@ class TimeUpdate<T> extends AsyncTask<T> implements IGameFramework.IAsyncTask<T>
             return;
         }
         // 多余的时间参与补偿，避免时间丢失
-        this._lastUpdateTime = currentTime - timeSinceLastUpdate;
+        const remainder = timeSinceLastUpdate % this._updateInterval;
+        this._lastUpdateTime = currentTime - remainder;
 
         const deltaTime = this._lastUpdateTime - this._lastTime;
-        this._lastTime = currentTime;
+        this._lastTime = this._lastUpdateTime;
 
         this._callback.call(this._callee, deltaTime);
     }
@@ -810,15 +811,24 @@ class AsyncTouchEvent<T> extends AsyncTask<T> implements IGameFramework.IAsyncTa
             node.on(NodeEventType.NODE_DESTROYED, destroy, this._target);
         }
 
-        const asycnSet = this._asyncSet;
-        while (!this.isDone) {
-            if (this.isCancellationRequested) return;
-            for (let event of asycnSet) {
-                this.handle.value = event as T;
-                yield event as Awaited<T>;
+        const asyncSet = this._asyncSet;
+        try {
+            while (!this.isDone) {
+                if (this.isCancellationRequested) return;
+                for (let event of asyncSet) {
+                    this.handle.value = event as T;
+                    yield event as Awaited<T>;
+                }
+                asyncSet.clear();
+                await asyncSet.wait();
             }
-            asycnSet.clear();
-            await asycnSet.wait();
+        } finally {
+            for (const node of this._nodes) {
+                for (const event of this._events) {
+                    node.off(event.event, invoke, this._target, event.useCapture);
+                }
+                node.off(NodeEventType.NODE_DESTROYED, destroy, this._target);
+            }
         }
     }
 }

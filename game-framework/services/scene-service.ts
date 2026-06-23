@@ -440,7 +440,8 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
             const openPromises = ctx.options.autoOpenViews.map(async (viewConf) => {
                 const view = await this._uiService.open(viewConf.service, viewConf.args);
                 if (view) {
-                    ctx.openedViews.add(view.viewName);
+                    const key = this._uiService.getOpenViewKey(view as unknown as BaseView<BaseService>);
+                    ctx.openedViews.add(key ?? view.viewName);
                 }
             });
             await Promise.all(openPromises);
@@ -608,7 +609,8 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
 
         const view = await this._uiService.open(service, args);
         if (view) {
-            this._currentScene.openedViews.add(view.viewName);
+            const key = this._uiService.getOpenViewKey(view as unknown as BaseView<BaseService>);
+            this._currentScene.openedViews.add(key ?? view.viewName);
         }
         return view;
     }
@@ -628,10 +630,22 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
             return false;
         }
 
-        const name = js.getClassName(ctor);
-        const result = await this._uiService.closeOrPopView(ctor);
+        let targetName: IGameFramework.Nullable<string> = null;
+        for (const name of this._currentScene.openedViews) {
+            const openedView = this._uiService.getOpenView(name);
+            if (openedView instanceof ctor) {
+                targetName = name;
+                break;
+            }
+        }
+
+        if (!targetName) {
+            return false;
+        }
+
+        const result = await this._uiService.closeOrPopViewName(targetName);
         if (result) {
-            this._currentScene.openedViews.delete(name);
+            this._currentScene.openedViews.delete(targetName);
         }
         return result;
     }
@@ -715,8 +729,15 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
      * 创建场景的3D根节点
      */
     private _createSceneRoot(ctx: SceneContext): void {
-        let root: Node = this._worldRoot;
-        // 如果有预制体，实例化并挂载到场景根节点下
+        let root = ctx.root3D;
+        if (root && root.isValid) {
+            if (root.parent !== this._worldRoot) {
+                this._worldRoot.addChild(root);
+            }
+            ctx.worldRoot = this._worldRoot;
+            return;
+        }
+
         if (ctx.options.scenePrefab) {
             const prefabNode = this._assetService.instantiateAsset(ctx.options.scenePrefab as AssetHandle<typeof Prefab>, true);
             if (prefabNode) {
@@ -725,6 +746,9 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
             } else {
                 logger.warn(`SceneService: 场景 ${ctx.options.name} 的预制体实例化失败`);
             }
+        } else {
+            root = new Node(`${ctx.options.name}-Root3D`);
+            this._worldRoot.addChild(root);
         }
 
         ctx.worldRoot = this._worldRoot;
