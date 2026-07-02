@@ -9,7 +9,7 @@ director.once("game-framework-initialize", () => {
 });
 
 type DecoratedListenerMeta<TEventOverview extends IGameFramework.EventOverview = IGameFramework.EventOverview> = {
-    dispatcher: () => EventDispatcher<TEventOverview>;
+    dispatcher: (instance: object) => EventDispatcher<TEventOverview>;
     eventName: Extract<keyof TEventOverview, string> | string;
     count: number;
     propertyKey: string | symbol;
@@ -69,7 +69,7 @@ function registerDecoratedListeners(target: object): void {
                 return;
             }
 
-            const dispatcher = meta.dispatcher();
+            const dispatcher = meta.dispatcher(target);
             dispatcher.addListener(meta.eventName, meta.listener, target, meta.count);
             states.set(meta.propertyKey, {
                 dispatcher,
@@ -189,12 +189,10 @@ const listenersPool = new ObjectPools(() => new Listener(), 256, 0);
 
 /**
  * 事件监听装饰器
- * 用于自动注册和注销事件监听器
- * @param dispatcher EventDispatcher实例
+ * 用于自动注册和注销当前实例上的事件监听器
  * @param eventName 事件名称
  */
 export function eventListener<TEventOverview extends IGameFramework.EventOverview, TEventName extends Extract<keyof TEventOverview, string> = Extract<keyof TEventOverview, string>>(
-    dispatcher: () => EventDispatcher<TEventOverview>,
     eventName: TEventName,
     count: number = Number.MAX_VALUE
 ) {
@@ -206,7 +204,7 @@ export function eventListener<TEventOverview extends IGameFramework.EventOvervie
         const decoratedTarget = target as DecoratedEventTarget;
         decoratedTarget[decoratedListenersKey] ??= [];
         decoratedTarget[decoratedListenersKey]!.push({
-            dispatcher,
+            dispatcher: (instance: object) => instance as EventDispatcher<TEventOverview>,
             eventName,
             count,
             propertyKey,
