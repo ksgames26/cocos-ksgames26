@@ -167,11 +167,12 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
         }
 
         if (room.isOpen) {
+            const waitReply = room.addAsyncListener(`$${reqUniqueId}`);
             room.send(type, data);
 
             let timeId: NodeJS.Timeout = null!;
             let timeoutPromise = new Promise<void>((resolve) => { timeId = setTimeout(resolve, timeout); });
-            const msg = await Promise.race([timeoutPromise, room.addAsyncListener(`$${reqUniqueId}`)]);
+            const msg = await Promise.race([timeoutPromise, waitReply]);
 
             // 不管有没有收到服务器消息，都要清除定时器
             timeId != null && clearTimeout(timeId);
@@ -274,12 +275,13 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
         const buffer = serializable?.encoder(req);
 
         if (room.isOpen) {
+            const waitReply = room.addAsyncListener(`$${reqUniqueId}`);
             room.send(type, buffer);
             DEBUG && logger.info(`⬆️⬇️ message to server, messageName: ${name}, reqUniqueId: ${reqUniqueId}`);
 
             let timeId: NodeJS.Timeout = null!;
             let timeoutPromise = new Promise<void>((resolve) => { timeId = setTimeout(resolve, timeout); });
-            const msg = await Promise.race([timeoutPromise, room.addAsyncListener(`$${reqUniqueId}`)]);
+            const msg = await Promise.race([timeoutPromise, waitReply]);
 
             // 不管有没有收到服务器消息，都要清除定时器
             timeId != null && clearTimeout(timeId);
