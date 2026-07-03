@@ -1,7 +1,7 @@
 import { Component, director, Node } from "cc";
-import { ObjectPools } from "../utils/object-pool";
-import { Deferred, fnEmpty, implementation } from "./misc";
 import { SortedSet } from "../structures/sorted-set";
+import { ObjectPools } from "../utils/object-pool";
+import { Deferred, fnEmpty, implementation, isDestroyed } from "./misc";
 
 let gameFrameworkInitialized = false;
 director.once("game-framework-initialize", () => {
@@ -502,11 +502,18 @@ export class EventDispatcher<TEventOverview extends IGameFramework.EventOverview
         count = Number.MAX_VALUE,
         priority: number = 0,
     ) {
-        const listenerObj = this.addListener(eventName, listener, callee, count, priority);
+        let isComponent = callee instanceof Component;
+        if (isComponent) {
+            const node = (callee as Component).node;
+            if (isDestroyed(node)) {
+                return null!;
+            }
+        }
 
-        if (listenerObj && callee instanceof Component) {
+        const listenerObj = this.addListener(eventName, listener, callee, count, priority);
+        if (listenerObj && isComponent) {
             listenerObj.auto = true;
-            callee.node.on(Node.EventType.NODE_DESTROYED, () => {
+            (callee as Component).node.on(Node.EventType.NODE_DESTROYED, () => {
                 this.removeListener(eventName, listener, callee);
             });
         }
@@ -825,7 +832,7 @@ export class EventDispatcher<TEventOverview extends IGameFramework.EventOverview
                     }
 
                     listenersPool.free(remove);
-                }else{
+                } else {
                     // 回收用于查找的临时 listener 对象
                     listenersPool.free(after.listener!);
                 }
