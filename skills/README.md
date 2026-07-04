@@ -10,6 +10,8 @@
   - 维护 i18n 配置解析、配置监听、Inspector 预览、运行时语言切换与多语言图片解析
 - `ksgames26-runtime-ui-scene-builder`
   - 基于 `BaseService`、`BaseView`、`UIService`、`SceneService` 设计和扩展运行时 UI / Scene 架构
+- `ksgames26-runtime-module-builder`
+  - 维护运行时模块的整套落地流程，包括 Service/View/Events/VM、声明式绑定、prefab/meta、uuid 与 asset-db 刷新
 - `ksgames26-runtime-network-config-integrator`
   - 维护 `ConfService`、`ProtobufSerializer`、`ColyseusSdk`、`Room` 相关的数据配置与联网集成
 
