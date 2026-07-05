@@ -1,10 +1,10 @@
-import { AsyncTask } from "../core/task";
-import { logger } from "../core/log";
-import { Container } from "../core/container";
-import { Deferred, isDestroyed, secFrame } from "../core/misc";
 import { Component, EventKeyboard, Node, Renderer, UIOpacity, UITransform, Widget, _decorator, easing, js, lerp } from "cc";
 import { DEBUG } from "cc/env";
+import { Container } from "../core/container";
 import { getEventListeners } from "../core/decorators";
+import { logger } from "../core/log";
+import { Deferred, isDestroyed, secFrame } from "../core/misc";
+import { AsyncTask } from "../core/task";
 import { AssetService } from "../services/asset-service";
 import { TaskService } from "../services/task-service";
 import { UIAnimaOpenMode, UIService, type OpenViewOptions, type OpenViewOptionsArgsChange } from "../services/ui-service";
@@ -14,18 +14,20 @@ import { bindingAndFixSpecialShapedScreen } from "./binding-and-fix-special-shap
 
 
 
-const { ccclass, menu } = _decorator;
+const { ccclass, menu, property } = _decorator;
 
 type ViewArgs<T extends BaseService> = T extends BaseService<any, any, infer A> ? A : unknown;
 
 enum PushPopState {
-    
+
     None, Push, Pop
 }
 
 @ccclass("BaseView")
 @menu("GameFramework/ViewState/BaseView")
 export abstract class BaseView<T extends BaseService, S = any> extends Component implements IGameFramework.IDisposable {
+    @property({ tooltip: "是否默认拦截当前界面的点击事件，关闭后可让事件继续透传到底层界面", visible: true })
+    protected _blockInputEvents: boolean = true;
 
     /**
      * 打开面板时候的参数
@@ -118,6 +120,16 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
      */
     public canClickClose(): boolean {
         return true;
+    }
+
+    /**
+     * 是否默认在界面根节点上添加 BlockInputEvents
+     *
+     * 默认会拦截事件，避免点击透传到下层界面。
+     * 如果当前界面需要允许事件透传，可以重写该方法并返回 false。
+     */
+    public shouldAddBlockInputEvents(): boolean {
+        return this._blockInputEvents;
     }
 
     /**
@@ -392,14 +404,14 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
             this.onViewComponentsShowed();
         }
     }
-    
+
     /**
      * 面板所有子组件显示完毕
      *
      * @memberof BaseView
      */
     public onViewComponentsShowed() {
-       
+
     }
 
     /**

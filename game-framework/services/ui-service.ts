@@ -718,11 +718,11 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
                     clickBg = await view.getClickBg() ?? await this.getClickBg();
                     layer.addChild(clickBg);
 
-                    if (!clickBg.getComponent(BlockInputEvents)) {
+                    if (view.shouldAddBlockInputEvents() && !clickBg.getComponent(BlockInputEvents)) {
                         clickBg.addComponent(BlockInputEvents);
                     }
                 } else {
-                    if (!ui.getComponent(BlockInputEvents)) {
+                    if (view.shouldAddBlockInputEvents() && !ui.getComponent(BlockInputEvents)) {
                         ui.addComponent(BlockInputEvents);
                     }
                 }
