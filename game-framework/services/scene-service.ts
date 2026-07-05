@@ -213,9 +213,6 @@ interface SceneEventOverview {
  */
 @ccclass("SceneService")
 export class SceneService extends EventDispatcher<SceneEventOverview> implements IGameFramework.ISingleton {
-    private _assetService: AssetService = Container.get(AssetService)!;
-    private _uiService: UIService = Container.get(UIService)!;
-
     /** 当前激活的场景 */
     private _currentScene: IGameFramework.Nullable<SceneContext> = null;
 
@@ -262,6 +259,14 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
      */
     public get isSwitching(): boolean {
         return this._switching;
+    }
+
+    private get assetService(): AssetService {
+        return Container.get(AssetService)!;
+    }
+
+    private get uiService(): UIService {
+        return Container.get(UIService)!;
     }
 
     //#region IGameFramework.ISingleton
@@ -374,7 +379,7 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
 
         // 通过 AssetService.loadAssets 加载并转发进度
         if (allAssets.length > 0) {
-            for await (const progress of this._assetService.loadAssets(allAssets)) {
+            for await (const progress of this.assetService.loadAssets(allAssets)) {
                 yield progress;
             }
         }
@@ -438,9 +443,9 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
         // 自动打开UI面板
         if (ctx.options.autoOpenViews.length > 0) {
             const openPromises = ctx.options.autoOpenViews.map(async (viewConf) => {
-                const view = await this._uiService.open(viewConf.service, viewConf.args);
+                const view = await this.uiService.open(viewConf.service, viewConf.args);
                 if (view) {
-                    const key = this._uiService.getOpenViewKey(view as unknown as BaseView<BaseService>);
+                    const key = this.uiService.getOpenViewKey(view as unknown as BaseView<BaseService>);
                     ctx.openedViews.add(key ?? view.viewName);
                 }
             });
@@ -607,9 +612,9 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
             return null;
         }
 
-        const view = await this._uiService.open(service, args);
+        const view = await this.uiService.open(service, args);
         if (view) {
-            const key = this._uiService.getOpenViewKey(view as unknown as BaseView<BaseService>);
+            const key = this.uiService.getOpenViewKey(view as unknown as BaseView<BaseService>);
             this._currentScene.openedViews.add(key ?? view.viewName);
         }
         return view;
@@ -632,7 +637,7 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
 
         let targetName: IGameFramework.Nullable<string> = null;
         for (const name of this._currentScene.openedViews) {
-            const openedView = this._uiService.getOpenView(name);
+            const openedView = this.uiService.getOpenView(name);
             if (openedView instanceof ctor) {
                 targetName = name;
                 break;
@@ -643,7 +648,7 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
             return false;
         }
 
-        const result = await this._uiService.closeOrPopViewName(targetName);
+        const result = await this.uiService.closeOrPopViewName(targetName);
         if (result) {
             this._currentScene.openedViews.delete(targetName);
         }
@@ -739,7 +744,7 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
         }
 
         if (ctx.options.scenePrefab) {
-            const prefabNode = this._assetService.instantiateAsset(ctx.options.scenePrefab as AssetHandle<typeof Prefab>, true);
+            const prefabNode = this.assetService.instantiateAsset(ctx.options.scenePrefab as AssetHandle<typeof Prefab>, true);
             if (prefabNode) {
                 root = prefabNode;
                 this._worldRoot.addChild(prefabNode);
@@ -771,7 +776,7 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
         const viewNames = Array.from(ctx.openedViews);
         const closePromises = viewNames.map(async (name) => {
             try {
-                await this._uiService.closeOrPopViewName(name);
+                await this.uiService.closeOrPopViewName(name);
             } catch (e) {
                 logger.warn(`SceneService: 关闭UI ${name} 时出错`, e);
             }
@@ -793,11 +798,11 @@ export class SceneService extends EventDispatcher<SceneEventOverview> implements
 
         // 释放预加载的资源引用
         if (ctx.options.scenePrefab) {
-            this._assetService.releaseAsset(ctx.options.scenePrefab as AssetHandle<typeof Asset>, false);
+            this.assetService.releaseAsset(ctx.options.scenePrefab as AssetHandle<typeof Asset>, false);
         }
 
         for (const handle of ctx.options.preloadAssets) {
-            this._assetService.releaseAsset(handle, false);
+            this.assetService.releaseAsset(handle, false);
         }
 
         // 通知控制器
