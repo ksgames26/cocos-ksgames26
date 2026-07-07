@@ -411,7 +411,7 @@ export class ViewState extends Animation {
      */
     public async changeState(index: number, trans: boolean = this._trans): Promise<void> {
         if (DEBUG) assert(index < this.stateMax, "index out of range");
-        else if (index < this.stateMax) return;
+        else if (index > this.stateMax) return;
 
         if (this.needAdjustState) {
             this._needAdjustState = false;
