@@ -34,6 +34,7 @@ export class ConfService<T = IGameFramework.ITableConf> {
     private _resource: T = js.createMap();
 
     public initliaze(bin: ArrayBuffer) {
+        this.resetResource();
         this.parse(bin);
     }
 
@@ -100,7 +101,24 @@ export class ConfService<T = IGameFramework.ITableConf> {
         serialization: IGameFramework.ISerializable
     ): object {
         const length = bytes.getInt32();
+        this.assertPayloadLength(bytes, length, id);
         const buffer = bytes.getUint8Array(bytes.pos, length);
         return (serialization.decoder(parseInt(id as string), buffer) ?? {}) as object;
+    }
+
+    private resetResource(): void {
+        this._resource = js.createMap() as T;
+    }
+
+    private assertPayloadLength(bytes: Byte, length: number, id: number | string): void {
+        if (length < 0) {
+            throw new Error(`Invalid conf payload length: protoId=${id}, length=${length}`);
+        }
+
+        if (length > bytes.bytesAvailable) {
+            throw new Error(
+                `Conf payload out of bounds: protoId=${id}, length=${length}, available=${bytes.bytesAvailable}`,
+            );
+        }
     }
 }

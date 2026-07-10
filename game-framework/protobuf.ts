@@ -8,6 +8,18 @@ const { ccclass } = _decorator;
 
 export * from "./protobuf-ts";
 
+function normalizeProtoId(id: string | number): string | number {
+    if (typeof id === "number") {
+        return id | 0;
+    }
+
+    if (/^-?\d+$/.test(id)) {
+        return parseInt(id, 10) | 0;
+    }
+
+    return id;
+}
+
 @ccclass("ProtobufSerializer")
 @implementation("IGameFramework.ISerializable")
 export class ProtobufSerializer implements IGameFramework.ISerializable {
@@ -20,14 +32,16 @@ export class ProtobufSerializer implements IGameFramework.ISerializable {
     }
 
     public registerInst<T extends MessageType<object> & IGameFramework.ISerializer>(inst: T): void {
-        DEBUG && assert(!this._map.has(inst.protoId), `ProtobufSerializer: ${inst.protoId} is already registered.`);
-        this._map.set(inst.protoId, inst);
+        const normalizedId = normalizeProtoId(inst.protoId);
+        DEBUG && assert(!this._map.has(normalizedId), `ProtobufSerializer: ${inst.protoId} is already registered.`);
+        this._map.set(normalizedId, inst);
     }
 
     public encoder<T extends IGameFramework.ISerializer>(clazz: T): IGameFramework.Nullable<Uint8Array> {
         const protoId = clazz.protoId;
         DEBUG && assert(!!protoId, `ProtobufSerializer: ${js.getClassName(clazz)} prototype protoId is undefined`);
-        const message = this._map.get(protoId) as MessageType<object> | undefined;
+        const normalizedId = normalizeProtoId(protoId);
+        const message = this._map.get(normalizedId) as MessageType<object> | undefined;
         if (!message) {
             return null;
         }
@@ -36,7 +50,8 @@ export class ProtobufSerializer implements IGameFramework.ISerializable {
     }
 
     public decoder<T extends IGameFramework.ISerializer>(protoId: string | number, buffer: Uint8Array): IGameFramework.Nullable<T> {
-        const message = this._map.get(protoId) as MessageType<object> | undefined;
+        const normalizedId = normalizeProtoId(protoId);
+        const message = this._map.get(normalizedId) as MessageType<object> | undefined;
         if (!message) {
             return null;
         }
@@ -45,7 +60,8 @@ export class ProtobufSerializer implements IGameFramework.ISerializable {
     }
 
     public create<T extends IGameFramework.ISerializer>(protoId: string | number): IGameFramework.Nullable<T> {
-        const message = this._map.get(protoId) as MessageType<object> | undefined;
+        const normalizedId = normalizeProtoId(protoId);
+        const message = this._map.get(normalizedId) as MessageType<object> | undefined;
         if (!message) {
             logger.error(`ProtobufSerializer: ${protoId} is not registered.`);
             return null;
@@ -57,7 +73,7 @@ export class ProtobufSerializer implements IGameFramework.ISerializable {
     }
 
     public getNameById(id: string | number): string | null {
-        const message = this._map.get(id);
+        const message = this._map.get(normalizeProtoId(id));
         return message ? message.typeName : null;
     }
 
@@ -86,7 +102,8 @@ export class ProtobufSerializer implements IGameFramework.ISerializable {
     }
 
     public clone<T>(protoId: string | number, source: T): IGameFramework.Nullable<T> {
-        const message = this._map.get(protoId) as MessageType<object> | undefined;
+        const normalizedId = normalizeProtoId(protoId);
+        const message = this._map.get(normalizedId) as MessageType<object> | undefined;
         if (!message) {
             logger.error(`ProtobufSerializer: ${protoId} is not registered.`);
             return null;
