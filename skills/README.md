@@ -12,6 +12,7 @@
   - 基于 `BaseService`、`BaseView`、`UIService`、`SceneService` 设计和扩展运行时 UI / Scene 架构
 - `ksgames26-runtime-module-builder`
   - 维护运行时模块的整套落地流程，包括 Service/View/Events/VM、声明式绑定、prefab/meta、uuid 与 asset-db 刷新
+  - 运行时 View 默认必须走 `binding-and-fix-special-shaped-screen.ts` 对应的 `@property + userData.binding` 绑定，不要手写 `getChildByName()`
 - `ksgames26-runtime-network-config-integrator`
   - 维护 `ConfService`、`ProtobufSerializer`、`ColyseusSdk`、`Room` 相关的数据配置与联网集成
 

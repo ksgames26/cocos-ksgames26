@@ -60,8 +60,9 @@ description: "Builds a full ksgames26 runtime module from UI to Service, binding
 3. 设计 View
    - 新建 `xxxView extends BaseView`
    - 视图只处理生命周期、显示刷新、按钮点击与 Service 协调
-   - 如果项目已采用声明式绑定，不要手写 `getChildByName()`
-   - 优先使用 `@property({ type, userData: { binding: "节点名" } })`
+   - 如果项目已采用声明式绑定，必须复用 `binding-and-fix-special-shaped-screen.ts` 这一套机制，不要手写 `getChildByName()`
+   - 默认使用 `@property({ type, userData: { binding: "节点名" } })`
+   - 只有在框架绑定当前确实无法覆盖时，才允许手动查找节点，并且需要在说明里明确原因
 
 4. 设计事件流
    - 建议为模块建立 `xxx-events.ts`
@@ -121,6 +122,7 @@ await Editor.Message.request('asset-db', 'query-asset-info', 'db://assets/...');
 - 如果项目已有 `binding-and-fix-special-shaped-screen.ts` 这一套绑定机制：
   - 优先用 `@property + userData.binding`
   - 不要在 `View` 中到处写 `getChildByName()`
+  - `Node`、`Button`、`Label`、自定义组件等常见场景都应先走声明式绑定，再考虑手动查找
 - 只有在当前框架绑定能力无法覆盖的场景下，才允许手动查找节点
 - 绑定名应和 prefab 节点命名保持一一对应
 
