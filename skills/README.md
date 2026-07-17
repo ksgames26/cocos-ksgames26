@@ -25,6 +25,8 @@
   - 编辑器扩展通过 `package.json` 的 `contributions` 和 `dist/*` 接入
   - 运行时代码通过 `asset-db` 挂载，对外以 `db://ksgames26/game-framework` 使用
 - 场景级运行时模块的输入真相源默认放在 `BaseService`，键盘采集优先落在 `BaseView`，不要直接把键盘状态塞进 `SceneController`
+- 运行时 `BaseView` 如果要参与键盘分发，通常需要在打开生命周期里显式 `enableKeyboard()`，关闭时 `disableKeyboard()`
+- 全屏 `BaseView` 默认可能通过根节点或 `BlockInputEvents` 挡住指针事件；场景级模块的鼠标/触摸输入优先在 `BaseView` 采集，再写回 `BaseService`
 - `game-framework` 内部文件优先使用相对导入；外部项目代码优先从 `db://ksgames26/game-framework` 导入
 - 任何涉及菜单、消息、面板、Inspector 的改动，都要同步检查 `package.json` 与 `source/main.ts` 是否仍然一致
 
