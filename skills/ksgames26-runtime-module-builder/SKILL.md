@@ -50,38 +50,32 @@ description: "Builds a full ksgames26 runtime module from UI to Service, binding
    - 是全屏页面、弹窗、局部组件，还是场景级模块
    - 是否需要 `BattleVm` 这类纯状态模型
    - 是否真的需要跨模块复用 VM，还是只抽通用状态片段
-
 2. 设计 Service
    - 新建 `xxxService extends BaseService`
    - 在 `viewOptions()` 中声明 bundle、prefab、`UIShowType`、`UIAnimaOpenMode`
    - 业务状态和业务动作优先放 `Service`
    - 打开其他模块统一走 `uiSvr.open(...)`
-
 3. 设计 View
    - 新建 `xxxView extends BaseView`
    - 视图只处理生命周期、显示刷新、按钮点击与 Service 协调
    - 如果项目已采用声明式绑定，必须复用 `binding-and-fix-special-shaped-screen.ts` 这一套机制，不要手写 `getChildByName()`
    - 默认使用 `@property({ type, userData: { binding: "节点名" } })`
    - 只有在框架绑定当前确实无法覆盖时，才允许手动查找节点，并且需要在说明里明确原因
-
 4. 设计事件流
    - 建议为模块建立 `xxx-events.ts`
    - `Service` 通过 `dispatch(...)` 派发视图更新事件
    - `View` 通过 `@eventViewListener(...)` 监听
    - 需要纯展示状态时，使用 `VmState` 接口承载视图数据
-
 5. 设计 VM
    - `VM` 是 `ViewModel`，负责产出界面状态，不直接操作节点
    - `VM` 适合承载标题、状态文案、按钮文案、开关态、计数、列表展示态
    - 模块级 `BattleVm` 不要为了复用而被别的模块直接共用
    - 优先抽离可复用状态片段，而不是把整个业务 VM 横向复用
-
 6. 设计 prefab
    - 节点命名要稳定、唯一、可绑定
    - 既然绑定按名字找，就不要把多个不同语义节点都命名成 `Label`
    - 例如按钮子文案节点用 `StartLabel`、`BackLabel`，不要都叫 `Label`
    - 自定义脚本组件挂在 prefab 时，`__type__` 要写压缩 `uuid`
-
 7. 处理 `.meta` 与 `uuid`
    - `.meta` 里写标准 `uuid`
    - prefab / scene 中自定义脚本的 `__type__` 写压缩 `uuid`
@@ -91,13 +85,13 @@ description: "Builds a full ksgames26 runtime module from UI to Service, binding
 Editor.Utils.UUID.compressUUID('<script-uuid>', false)
 ```
 
-   - 反查时使用：
+- 反查时使用：
 
 ```js
 Editor.Utils.UUID.decompressUUID('<compressed-uuid>')
 ```
 
-8. 处理 asset-db
+1. 处理 asset-db
    - 手工新增脚本、prefab、`.meta` 后，要刷新 `asset-db`
    - 典型调用：
 
@@ -105,13 +99,13 @@ Editor.Utils.UUID.decompressUUID('<compressed-uuid>')
 await Editor.Message.request('asset-db', 'refresh');
 ```
 
-   - 刷新后再查询：
+- 刷新后再查询：
 
 ```js
 await Editor.Message.request('asset-db', 'query-asset-info', 'db://assets/...');
 ```
 
-9. 验证 prefab 与脚本挂载
+1. 验证 prefab 与脚本挂载
    - 检查 prefab 是否被识别
    - 检查脚本 `.meta` 是否 imported
    - 检查 prefab 的 `dependScripts` 是否包含目标脚本 uuid
@@ -138,7 +132,7 @@ await Editor.Message.request('asset-db', 'query-asset-info', 'db://assets/...');
 }
 ```
 
-2. 压缩 `uuid`
+1. 压缩 `uuid`
    - 用在 prefab / scene 的自定义脚本组件 `__type__`
    - 示例：
 
@@ -146,11 +140,10 @@ await Editor.Message.request('asset-db', 'query-asset-info', 'db://assets/...');
 cc6f7RSruJHF5j0sStDxnwZ
 ```
 
-3. 记忆法
+1. 记忆法
    - `meta.uuid = 原始 uuid`
    - `prefab.__type__ = 压缩 uuid`
-
-4. 常见错误
+2. 常见错误
    - 手写错压缩 `uuid`
    - prefab 里脚本 `__type__` 与脚本 `.meta` 的 `uuid` 不匹配
    - 结果是 Cocos 报：
@@ -234,3 +227,4 @@ export class DemoView extends BaseView<DemoService> {
 3. 绑定策略是否遵循框架约定
 4. prefab / `.meta` / `uuid` / 压缩 `uuid` 的处理方式
 5. `asset-db` 刷新与验证步骤
+
