@@ -44,6 +44,38 @@ description: "Builds a full ksgames26 runtime module from UI to Service, binding
 - 业务子 VM
 - scene 入口或路由层
 
+## 场景级模块强约束
+
+如果模块是 `battle`、`world`、`stage` 这类“场景级模块”，也仍然要遵循 `BaseService + BaseView + SceneController` 三层结构，不允许只有 `Service + SceneController`。
+
+- `xxxService`
+  - 必须继承 `BaseService`
+  - 必须提供 `viewOptions()`
+  - 负责持有输入状态、业务状态、对外动作和跨模块调用
+- `xxxView`
+  - 必须继承 `BaseView`
+  - 负责键盘事件、按钮点击、界面生命周期
+  - 如果模块需要键盘焦点，必须把键盘处理写在 `onKeyDown()` / `onKeyUp()` / `onKeyPressing()`
+- `xxxSceneController`
+  - 只负责场景节点构建、运行时更新、场景资源消费
+  - 只读取 `Service` 中的状态，不拥有输入真相
+  - 不要把键盘状态、业务状态重新复制一份藏在 `SceneController`
+
+典型职责边界：
+
+- `View` 采集输入
+- `Service` 存储输入和业务状态
+- `SceneController` 消费状态驱动场景表现
+
+典型反例：
+
+- `BattleSceneController` 里直接 `input.on(Input.EventType.KEY_DOWN, ...)`
+- 场景控制器内部维护 `_inputState.up/down/left/right`
+- 模块没有 `battle-view.ts` 和 `battle-view.prefab`
+- `BattleService` 不是 `BaseService`
+
+上面这些都应该视为偏离框架约定，必须回退到标准三层结构。
+
 ## 工作步骤
 
 1. 先确认模块职责
@@ -58,9 +90,16 @@ description: "Builds a full ksgames26 runtime module from UI to Service, binding
 3. 设计 View
    - 新建 `xxxView extends BaseView`
    - 视图只处理生命周期、显示刷新、按钮点击与 Service 协调
+   - 如果是场景级模块，也必须有 `View`，不能因为“主要内容在场景里”就省略 `View`
+   - 场景级模块的键盘输入默认落在 `View`，不要直接写在 `SceneController`
    - 如果项目已采用声明式绑定，必须复用 `binding-and-fix-special-shaped-screen.ts` 这一套机制，不要手写 `getChildByName()`
    - 默认使用 `@property({ type, userData: { binding: "节点名" } })`
    - 只有在框架绑定当前确实无法覆盖时，才允许手动查找节点，并且需要在说明里明确原因
+4. 设计 SceneController
+   - 仅在确实有场景根节点、滚动地图、实体生成、逐帧战斗更新时才引入 `SceneController`
+   - `SceneController` 不负责 UI 打开逻辑，UI 由 `Service.viewOptions()` 和 `UIService` 体系负责
+   - 场景切入时如需同时打开模块 View，应通过 `SceneOptions.autoOpenViews` 接通，而不是手动绕开 `UIService`
+   - `SceneController` 读取 `Service` 状态，不直接订阅键盘输入
 4. 设计事件流
    - 建议为模块建立 `xxx-events.ts`
    - `Service` 通过 `dispatch(...)` 派发视图更新事件
@@ -119,6 +158,32 @@ await Editor.Message.request('asset-db', 'query-asset-info', 'db://assets/...');
   - `Node`、`Button`、`Label`、自定义组件等常见场景都应先走声明式绑定，再考虑手动查找
 - 只有在当前框架绑定能力无法覆盖的场景下，才允许手动查找节点
 - 绑定名应和 prefab 节点命名保持一一对应
+
+## 输入与场景约束
+
+- 键盘输入优先落在 `BaseView.onKeyDown()` / `onKeyUp()` / `onKeyPressing()`
+- 不要在业务模块里直接 `input.on(Input.EventType.KEY_DOWN, ...)` 处理键盘，除非用户明确要求绕过框架
+- 鼠标、触摸如果只是 UI 交互，仍应优先放在 `View`
+- 鼠标、触摸如果确实是场景瞄准、拖拽、选点这类“世界交互”，可以由 `SceneController` 采集，但最终也应回写到 `Service`
+- 不要让 `View`、`Service`、`SceneController` 各自维护一份输入状态
+- 输入状态要有唯一真相源，默认放在 `Service`
+
+推荐模式：
+
+```txt
+BattleView.onKeyDown/onKeyUp
+  -> BattleService.setMoveState(...)
+  -> BattleSceneController 读取 BattleService.inputState
+  -> 驱动坦克移动/旋转/射击
+```
+
+如果是场景级模块，必须显式检查：
+
+1. 是否存在 `xxx-view.ts`
+2. 是否存在 `xxx-view.prefab`
+3. `xxxService` 是否继承 `BaseService`
+4. `SceneOptions.autoOpenViews` 是否接通该模块 View
+5. 是否把输入错误地下沉到了 `SceneController`
 
 ## `uuid` 和压缩 `uuid` 规则
 
@@ -179,6 +244,16 @@ cc6f7RSruJHF5j0sStDxnwZ
 - 把节点查找转换成 `@property + binding`
 - 保持 View 只写交互，不写节点扫描逻辑
 
+### 4. 场景模块没有 View
+
+按这个顺序查：
+
+1. `xxxService` 是否错误地没有继承 `BaseService`
+2. `viewOptions()` 是否缺失
+3. 是否遗漏了 `xxx-view.ts` 和 `xxx-view.prefab`
+4. `SceneOptions.autoOpenViews` 是否为空
+5. 是否误把所有输入和生命周期都堆进了 `SceneController`
+
 ## 推荐实现模板
 
 ### 1. Service
@@ -207,6 +282,38 @@ export class DemoView extends BaseView<DemoService> {
 }
 ```
 
+### 3. 场景级模块
+
+```ts
+@ccclass("BattleService")
+@Container.injectable()
+export class BattleService extends BaseService<{}, BattleEvents, void> {
+    public viewOptions(): OpenViewOptions<void> {
+        return new OpenViewOptions<void>(
+            this.assetSvr.getOrCreateAssetHandle("main-ui-res", Prefab, "battle-view"),
+            UIAnimaOpenMode.NONE,
+            UIShowType.FullScreenView,
+        );
+    }
+}
+```
+
+```ts
+@ccclass("BattleView")
+export class BattleView extends BaseView<BattleService> {
+    public override onKeyDown(event: EventKeyboard): void {
+        // 在这里把键盘输入写回 Service，而不是直接写 SceneController
+    }
+}
+```
+
+```ts
+await sceneSvr.switchScene(
+    createBattleSceneOptions(assetSvr, sceneConfig, [{ service: BattleService }]),
+    new BattleSceneController(),
+);
+```
+
 ## 最小验证
 
 运行时模块至少验证：
@@ -217,6 +324,8 @@ export class DemoView extends BaseView<DemoService> {
 - 打开界面时不报 `Missing class`
 - 绑定字段能正确赋值
 - 按钮点击能走到 Service
+- 场景级模块已实际打开 `xxxView`
+- 键盘输入没有直接挂在 `SceneController`
 
 ## 输出要求
 
@@ -227,4 +336,3 @@ export class DemoView extends BaseView<DemoService> {
 3. 绑定策略是否遵循框架约定
 4. prefab / `.meta` / `uuid` / 压缩 `uuid` 的处理方式
 5. `asset-db` 刷新与验证步骤
-
