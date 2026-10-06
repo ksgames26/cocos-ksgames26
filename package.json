@@ -7,11 +7,13 @@
     "editor": ">=3.8.7",
     "scripts": {
         "preinstall": "node ./scripts/preinstall.js",
-        "build": "npx tsc"
+        "build": "node scripts/sync-colyseus.mjs && tsc",
+        "sync:colyseus": "node scripts/sync-colyseus.mjs"
     },
     "description": "i18n:ksgames26.description",
     "main": "./dist/main.js",
     "dependencies": {
+        "@colyseus/sdk": "0.18.5",
         "fs-extra": "^11.3.0",
         "vue": "^3.5.13",
         "xlsx": "^0.18.5"

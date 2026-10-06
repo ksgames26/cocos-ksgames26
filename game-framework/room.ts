@@ -76,7 +76,7 @@ export class Room extends EventDispatcher<EventOverview> implements IGameFramewo
     public dispose(): void {
         if (this._disposed) return;
         this._disposed = true;
-        this._inst.connection.close(4000, "close");
+        void this._inst.leave();
     }
 
     public constructor(name: string, inst: Colyseus.Room) {

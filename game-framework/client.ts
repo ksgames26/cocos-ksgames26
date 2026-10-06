@@ -116,6 +116,22 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
         return true;
     }
 
+    /** Consume each one-use reservation once; a retry must obtain a new seat from LG. */
+    public async consumeSeatReservation(reservation: Colyseus.SeatReservation): Promise<boolean> {
+        if (this._disposed || this._room) {
+            return false;
+        }
+        this._client ??= new colyseus.Client(this._address);
+        const inst = await this._client.consumeSeatReservation(reservation);
+        if (this._disposed) {
+            await inst.leave();
+            return false;
+        }
+        inst.reconnection.enabled = false;
+        this._room = new Room(reservation.name, inst).listen(this);
+        return true;
+    }
+
     public getRoom(): IGameFramework.Nullable<Room> {
         return this._room;
     }
@@ -319,6 +335,8 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
 
         const inst = await this._connect(3, roomNameOrID, joinData);
         if (inst) {
+            // The framework owns reconnect/login policy; avoid a second SDK retry loop.
+            inst.reconnection.enabled = false;
             let impl = ctor ?? Room;
             this._room = new impl(roomNameOrID, inst).listen(this);
             return true;
