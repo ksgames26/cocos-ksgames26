@@ -62,6 +62,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
     protected _sourceOpacityValue: number = 255;
     protected _uiOpacityAdd: boolean = false;
     private _disposed: boolean = false;
+    private _closing = false;
     private _viewCloseAfterPromise: IGameFramework.Nullable<Promise<IGameFramework.Nullable<ReturnType<this["onClose"]>>>>;
     private _viewCloseAfterResolve: IGameFramework.Nullable<(r: IGameFramework.Nullable<any>) => void>;
 
@@ -239,15 +240,12 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
         const deferred = this._closeDeferred;
 
         const uiService = Container.get(UIService)!;
-        const name = this._options.viewName;
-        if (name) {
-            await uiService.closeOrPopViewName(name);
-        } else {
+        try {
             await uiService.closeOrPopViewInstance(this);
+        } finally {
+            deferred.fulfilled();
+            if (this._closeDeferred === deferred) this._closeDeferred = null;
         }
-
-        deferred?.fulfilled();
-        this._closeDeferred = null;
     }
 
     /**
@@ -259,10 +257,16 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
         if (this._disposed) return;
         this._disposed = true;
 
+        getEventListeners(this).forEach((listener) => {
+            const dispatcher = listener.global
+                ? Container.getInterface("IGameFramework.IEventDispatcher")
+                : this._service;
+            dispatcher?.removeListener(listener.event, listener.value, this);
+        });
         this.remRef();
         this.node.destroy();
         this._service = null!;
-        this._options?.dispose();
+        this._options?.removeListener("args-change", this.handleArgsChange, this);
         this._options = null!;
         this._closeDeferred = null;
 
@@ -308,6 +312,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
      * @memberof BaseView
      */
     public async applyShow(): Promise<void> {
+        if (this.isDisposed || this._closing) return;
         this.showBefore();
 
         const taskSvr = Container.get(TaskService)!;
@@ -321,7 +326,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
 
             await this.showBeforeAnimate();
 
-            if (this.isDisposed) {
+            if (this.isDisposed || this._closing) {
                 return;
             }
         }
@@ -341,7 +346,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
         // 等待一帧，让afterAddChild的里面Widget更新完毕
         // 要不然在afterAddChild里面调用onShow，如果此时使用某些API，比如UITransform.convertToWorldSpaceAR，会导致Widget没有更新完毕，导致位置错乱
         await taskSvr!.waitNextFrame();
-        if (this.isDisposed) {
+        if (this.isDisposed || this._closing) {
             return;
         }
 
@@ -354,7 +359,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
             // 此时applyShow函数不等待返回。
             // 调用者可以在onShowStream里面使用多任务来在无加载场景覆盖下做一些类似流式处理
             taskSvr.runTask(hasTask).then(async () => {
-                if (this.isDisposed) {
+                if (this.isDisposed || this._closing) {
                     return;
                 }
 
@@ -364,7 +369,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
         }
 
         // 这里判断了当前面板还没有销毁
-        if (!this.isDisposed) {
+        if (!this.isDisposed && !this._closing) {
             let childShowTaskCount = 0;
             this._viewComponents.forEach(viewComponents => {
                 // 如果实现了预加载函数
@@ -374,7 +379,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
                     viewComponents.preloadAssets().then(() => {
                         // 防止在预加载完毕后，面板已经销毁。此时onShow已经无任何意义
                         // 对于有异步资源预加载的子组件，需要再次判断一下面板是不是销毁了，因为这里是异步执行。有足够的时机导致当前面板被销毁
-                        if (!this.isDisposed) {
+                        if (!this.isDisposed && !this._closing) {
                             viewComponents.childComponentsShow();
                             viewComponents.onShow?.()
                         }
@@ -382,7 +387,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
                     }).catch(err => {
                         // 防止在预加载完毕后，面板已经销毁。此时onShow已经无任何意义
                         // 对于有异步资源预加载的子组件，需要再次判断一下面板是不是销毁了，因为这里是异步执行。有足够的时机导致当前面板被销毁
-                        if (!this.isDisposed) {
+                        if (!this.isDisposed && !this._closing) {
                             viewComponents.childComponentsShow();
                             viewComponents.onShow?.()
                         }
@@ -397,7 +402,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
             });
 
             await taskSvr.waitUntil(() => childShowTaskCount <= 0);
-            if (this.isDisposed) {
+            if (this.isDisposed || this._closing) {
                 return;
             }
 
@@ -420,6 +425,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
      * @memberof BaseView
      */
     public async applyClose(): Promise<ReturnType<this["onClose"]>> {
+        this._closing = true;
         if (this._options.playAnimation == UIAnimaOpenMode.OPEN_CLOSE_BEFORE || this._options.playAnimation == UIAnimaOpenMode.OPEN_ALL) {
             await this.closeBeforeAnimate();
         }
@@ -648,6 +654,7 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
         time: number,
         easing: (v: number) => number
     ): Promise<void> {
+        const closing = this._closing;
         const trans = this.node.getComponent(UITransform)!;
 
         // 因为默认动画是一个先放大在缩小的动画
@@ -663,12 +670,14 @@ export abstract class BaseView<T extends BaseService, S = any> extends Component
         this.node.setScale(start, start);
         // 先放大
         for await (const t of task.loopFrameAsyncIter(count)) {
+            if (this.isDisposed || this._closing !== closing) return;
             let scale = lerp(start, center, easing(t / count));
             this.node.setScale(scale, scale);
         }
 
         // 再缩放
         for await (const t of task.loopFrameAsyncIter(count)) {
+            if (this.isDisposed || this._closing !== closing) return;
             let scale = lerp(center, end, easing(t / count));
             this.node.setScale(scale, scale);
         }

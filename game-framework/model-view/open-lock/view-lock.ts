@@ -116,7 +116,9 @@ export class ViewLock<S extends BaseService, StreamTaskReturn> {
     private _refCount: number = 0;
     private _service: S;
     private _nodeDestroyClear: Node;
-    private _shouldCloseAfterOpen: boolean = false;
+    private _version = 0;
+    private _closingTask: Promise<void> | null = null;
+    private _cleared = false;
     private _view: BaseView<S, StreamTaskReturn> | null = null;
 
     private _beforeTask: (args?: ServiceViewArgs<S>) => Promise<IGameFramework.Nullable<ServiceViewArgs<S>>> = null!;
@@ -139,8 +141,7 @@ export class ViewLock<S extends BaseService, StreamTaskReturn> {
         },
     ) {
         this._service = service;
-        const serviceOptions = service.viewOptions() as OpenViewOptions<ServiceViewArgs<S>>;
-        this._options = options ?? serviceOptions;
+        this._options = options ?? service.viewOptions() as OpenViewOptions<ServiceViewArgs<S>>;
         this._nodeDestroyClear = nodeDestroyClear ?? null!;
         this._enableRefCount = !!lockOptions?.enableRefCount;
 
@@ -158,7 +159,7 @@ export class ViewLock<S extends BaseService, StreamTaskReturn> {
     }
 
     public get hasView() {
-        return this._view !== null;
+        return !!this._view && !this._view.isDisposed;
     }
 
     public get isOpening() {
@@ -170,119 +171,84 @@ export class ViewLock<S extends BaseService, StreamTaskReturn> {
     }
 
     public async openView(args?: ServiceViewArgs<S>): Promise<IGameFramework.Nullable<BaseView<S, StreamTaskReturn>>> {
-        if (this._enableRefCount && this._view && !this._view.isDisposed) {
+        if (this._cleared) return null;
+        if (this._closingTask) {
+            await this._closingTask;
+            return this.openView(args);
+        }
+        if (this._enableRefCount && (this.hasView || this._openingTask)) {
             this._refCount++;
-            return this._view;
+            return this._openingTask ?? this._view;
         }
-
-        if (this._enableRefCount && this._openingTask) {
-            this._refCount++;
-            return await this._openingTask;
-        }
-
-        if (!this._canOpen) {
-            logger.warn("View is locking, cannot open view");
-            return;
-        }
-
+        if (!this._canOpen) return null;
+        const version = ++this._version;
         this._canOpen = false;
-        if (this._enableRefCount) {
-            this._refCount++;
-            this._shouldCloseAfterOpen = false;
-            this._openingTask = this.doOpenView(args);
+        this._isOpening = true;
+        this._refCount = this._enableRefCount ? 1 : 0;
+        const task = Promise.resolve().then(async () => {
             try {
-                return await this._openingTask;
+                const value = this._beforeTask ? await this._beforeTask(args) : args;
+                if (version !== this._version || this._cleared) return null;
+                this._options.args = value;
+                const ui = Container.get(UIService)!;
+                if (!ui) throw new Error("UIService instance is null");
+                const view = await ui.openView<BaseView<S, StreamTaskReturn>, S>(this._options, this._service);
+                if (version !== this._version || this._cleared) return null;
+                this._view = view ?? null;
+                if (view) {
+                    void view.viewCloseAfter().then(() => {
+                        if (this._version !== version || this._view !== view) return;
+                        this._view = null;
+                        this._canOpen = true;
+                        this._refCount = 0;
+                    });
+                }
+                return view;
             } finally {
-                this._openingTask = null;
+                if (version === this._version) {
+                    this._isOpening = false;
+                    this._openingTask = null;
+                    if (!this.hasView) {
+                        this._canOpen = true;
+                        this._refCount = 0;
+                    }
+                }
             }
-        }
-
-        return await this.doOpenView(args);
+        });
+        this._openingTask = task;
+        return task;
     }
 
     public async closeView(): Promise<void> {
-        if (this._enableRefCount) {
-            if (this._refCount > 0) {
-                this._refCount--;
-            }
-
-            if (this._refCount > 0) {
-                return;
-            }
-
-            if (this._isOpening && !this._view) {
-                this._shouldCloseAfterOpen = true;
-                return;
-            }
-        }
-
-        if (this._view) {
-            await this._view.close();
-            this._view = null;
-        }
-    }
-
-    private async doOpenView(args?: ServiceViewArgs<S>): Promise<IGameFramework.Nullable<BaseView<S, StreamTaskReturn>>> {
-        const uiSvr = Container.get(UIService)!;
-        if (!uiSvr) {
-            logger.error("UIService instance is null");
-            this._canOpen = true;
-            this._refCount = 0;
-            return;
-        }
-
-        this._isOpening = true;
-        this._options.args = undefined;
-        if (this._beforeTask) {
-            const result = await this._beforeTask(args);
-            if (result !== undefined) {
-                this._options.args = result;
-            }
-        } else if (args !== undefined) {
-            this._options.args = args;
-        }
-
-        try {
-            const view = await uiSvr.openView(this._options, this._service);
-            this._view = view ?? null;
-            if (view) {
-                view.viewCloseAfter().then(() => {
-                    this._view = null;
-                    this._canOpen = true;
-                    this._refCount = 0;
-                    this._shouldCloseAfterOpen = false;
-                });
-
-                if (this._enableRefCount && (this._shouldCloseAfterOpen || this._refCount <= 0)) {
-                    this._shouldCloseAfterOpen = false;
-                    this._refCount = 0;
-                    await view.close();
-                }
-            } else {
-                this._canOpen = true;
-                this._refCount = 0;
-                this._shouldCloseAfterOpen = false;
-            }
-
-            return view ?? null;
-        } finally {
-            this._isOpening = false;
-        }
+        if (this._closingTask) return this._closingTask;
+        if (this._enableRefCount && this._refCount > 0) this._refCount--;
+        if (this._enableRefCount && this._refCount > 0) return;
+        ++this._version;
+        this._isOpening = false;
+        this._openingTask = null;
+        this._canOpen = false;
+        const view = this._view;
+        this._view = null;
+        const task = Promise.resolve().then(async () => {
+            const ui = Container.get(UIService);
+            if (view && !view.isDisposed) await view.close();
+            else if (ui && this._options) await ui.closeOrPopViewName(this._options);
+        }).finally(() => {
+            this._closingTask = null;
+            this._canOpen = !this._cleared;
+        });
+        this._closingTask = task;
+        return task;
     }
 
     public clear(): void {
-        this._view = null!;
-        this._options?.dispose();
-        this._options = null!;
-        this._service = null!;
-        this._nodeDestroyClear = null!;
-        this._beforeTask = null!;
-        this._openingTask = null;
+        this._cleared = true;
         this._refCount = 0;
-        this._isOpening = false;
-        this._canOpen = true;
-        this._shouldCloseAfterOpen = false;
+        void this.closeView().catch(error => logger.error("ViewLock cleanup failed", error));
+        this._beforeTask = null!;
+        this._nodeDestroyClear = null!;
     }
+
 }
 
 /**

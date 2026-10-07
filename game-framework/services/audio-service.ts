@@ -54,6 +54,7 @@ export class AudioService {
     private _effectVolume = 1;
     private _maxEffectSources = 8;
     private _initialized = false;
+    private _musicRequestVersion = 0;
 
     public get initialized(): boolean {
         return this._initialized;
@@ -130,6 +131,7 @@ export class AudioService {
 
     public async playMusic(bundle: string, path: string, options?: PlayMusicOptions): Promise<void> {
         this.ensureInitialized();
+        const version = ++this._musicRequestVersion;
         let handle: AudioClipHandle | null = null;
         let clip: AudioClip | null = null;
         try {
@@ -139,10 +141,12 @@ export class AudioService {
             return;
         }
 
+        if (version !== this._musicRequestVersion || !this._initialized) return;
         this.applyMusicClip(clip!, options, handle);
     }
 
     public stopMusic(): void {
+        ++this._musicRequestVersion;
         if (!this._musicSource) {
             return;
         }

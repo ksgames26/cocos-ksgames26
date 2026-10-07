@@ -341,10 +341,24 @@ interface EventOverview {
 
 type V = BaseView<BaseService> | BaseViewComponent<BaseService, BaseView<BaseService>>;
 
+export type UIViewState = "closed" | "opening" | "open" | "closing" | "hidden";
+type ViewTarget = string | OpenViewOptions<any>;
+interface ViewOperation {
+    key: string;
+    state: UIViewState;
+    view?: BaseView<BaseService>;
+    opening?: Promise<IGameFramework.Nullable<BaseView<BaseService>>>;
+    closing?: Promise<boolean>;
+    closed: Promise<any>;
+    resolveClosed(value: any): void;
+}
+
 @ccclass("UIService")
 export class UIService extends EventDispatcher<EventOverview> implements IGameFramework.ISingleton {
     private _loadService: AssetService = Container.get(AssetService)!;
     private _openingViews: Map<string, { view: BaseView<BaseService>, clickBg: IGameFramework.Nullable<Node> }> = new Map();
+    private _viewOperations = new Map<string, ViewOperation>();
+    private _viewAliases = new Map<string, string>();
     private _history: Array<BaseView<BaseService>> = new Array();
     private _touch: Node = null!;
     private _top: Node = null!;
@@ -488,9 +502,21 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @return {*}  {boolean}
      * @memberof UIService
      */
-    public hasOpenView(n: string): boolean {
-        if (this._openingViews.get(n)) return true;
-        return false
+    public hasOpenView(n: ViewTarget): boolean {
+        const state = this.getViewState(n);
+        return state === "opening" || state === "open";
+    }
+
+    public getViewState(target: ViewTarget): UIViewState {
+        const operation = this._viewOperations.get(this.viewKey(target));
+        if (operation?.view?.isDisposed) return "closed";
+        return operation?.state ?? "closed";
+    }
+
+    private viewKey(target: ViewTarget): string {
+        const key = typeof target === "string" ? target : target.viewName ??
+            JSON.stringify([target.prefab.bundle, target.prefab.path]);
+        return this._viewAliases.get(key) ?? key;
     }
 
     /**
@@ -500,8 +526,9 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @return {*}  {IGameFramework.Nullable<BaseView<BaseService>>}
      * @memberof UIService
      */
-    public getOpenView(n: string): IGameFramework.Nullable<BaseView<BaseService>> {
-        return this._openingViews.get(n)?.view;
+    public getOpenView(n: ViewTarget): IGameFramework.Nullable<BaseView<BaseService>> {
+        const operation = this._viewOperations.get(this.viewKey(n));
+        return operation?.state === "open" && !operation.view?.isDisposed ? operation.view : null;
     }
 
 
@@ -688,13 +715,61 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @memberof UIService
      */
     public async openView<T extends BaseView<U>, U extends BaseService>(options: OpenViewOptions<ServiceViewArgs<U>>, service: U): Promise<IGameFramework.Nullable<T>> {
+        const key = this.viewKey(options);
+        const previous = this._viewOperations.get(key);
+        if (previous && !previous.view?.isDisposed) {
+            if (previous.state === "closing" && previous.view?.isPushPopView()) {
+                await previous.closing;
+                return this.openView(options, service);
+            }
+            if (previous.state === "opening") return previous.opening as Promise<IGameFramework.Nullable<T>>;
+            if (previous.state === "open") return previous.view as T;
+            if (previous.state === "hidden") {
+                previous.state = "opening";
+                previous.opening = Promise.resolve().then(async () => {
+                    try {
+                        await previous.view!.push();
+                        if (previous.state !== "opening") return null;
+                        previous.state = "open";
+                        return previous.view;
+                    } catch (error) {
+                        if (previous.state === "opening") previous.state = "hidden";
+                        throw error;
+                    }
+                });
+                return previous.opening as Promise<IGameFramework.Nullable<T>>;
+            }
+        }
+        const completion = makeDeferred<any>();
+        const operation: ViewOperation = {
+            key, state: "opening", closed: completion.promise, resolveClosed: completion.resolve,
+        };
+        this._viewOperations.set(key, operation);
+        operation.opening = Promise.resolve().then(async () => {
+            await previous?.closing?.catch(() => {});
+            if (operation.state !== "opening") return null;
+            try {
+                const view = await this.performOpenView(options, service, operation);
+                if (operation.state !== "opening" || !view || view.isDisposed) return null;
+                operation.state = "open";
+                return view;
+            } finally {
+                if (operation.state === "opening") {
+                    this.removeViewEntry(operation);
+                }
+            }
+        });
+        return operation.opening as Promise<IGameFramework.Nullable<T>>;
+    }
+
+    private async performOpenView<T extends BaseView<U>, U extends BaseService>(options: OpenViewOptions<ServiceViewArgs<U>>, service: U, operation: ViewOperation): Promise<IGameFramework.Nullable<T>> {
         let asset: IGameFramework.Nullable<Asset> = null;
         DEBUG && assert(!options.prefab.isDir(), "prefab should be a file");
 
         logger.debug(`UIService openView ${options.prefab}`);
 
         asset = await this._loadService.loadAssetAsync(options.prefab);
-        if (!asset) return;
+        if (!asset || operation.state !== "opening") return;
         if (asset instanceof Prefab) {
             const assetMgr = Container.get(AssetService)!;
             const ui = assetMgr.instantiateAsset(options.prefab as AssetHandle<typeof Prefab>, true);
@@ -703,62 +778,89 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
 
             const view = ui.getComponent("BaseView") as T;
             if (view) {
-
-                const layer = options.layer == UILayer.Custom ? options.layerNode : this.getLayer(options.layer);
-                if (!layer) {
-                    logger.error(`layer ${options.layer} node is null`);
-                    ui.destroy();
-                    return null!;
-                }
-
-                DEBUG && assert(!(options.pushPopView && options.showType == UIShowType.BlackBaseView), "暂不支持一个面板是PUSHPOP面板又使用黑色背景打开的方式打开面板")
-
                 let clickBg: Node | null = null;
-                if (options.showType == UIShowType.BlackBaseView) {
-                    clickBg = await view.getClickBg() ?? await this.getClickBg();
-                    layer.addChild(clickBg);
+                try {
 
-                    if (view.shouldAddBlockInputEvents() && !clickBg.getComponent(BlockInputEvents)) {
-                        clickBg.addComponent(BlockInputEvents);
+                    const layer = options.layer == UILayer.Custom ? options.layerNode : this.getLayer(options.layer);
+                    if (!layer) {
+                        logger.error(`layer ${options.layer} node is null`);
+                        ui.destroy();
+                        return null!;
                     }
-                } else {
-                    if (view.shouldAddBlockInputEvents() && !ui.getComponent(BlockInputEvents)) {
-                        ui.addComponent(BlockInputEvents);
-                    }
-                }
 
-                // addChild 会触发onLoad
-                layer.addChild(ui);
-                view.afterAddChild(options, service);
-                this._openingViews.set(options.viewName ?? view.viewName, { view, clickBg });
+                    DEBUG && assert(!(options.pushPopView && options.showType == UIShowType.BlackBaseView), "暂不支持一个面板是PUSHPOP面板又使用黑色背景打开的方式打开面板")
 
-                if (options.pushPopView) {
-                    this._history.push(view);
-                    view.push();
-                }
-
-                // 所以onShow是在onLoad之后
-                await view.applyShow();
-
-                if (clickBg && !view.isDisposed && view.canClickClose()) {
-                    clickBg.once(Node.EventType.TOUCH_START, (evt: EventTouch) => {
-                        if (view.isDisposed) {
-                            DEBUG && logger.warn("view is disposed");
-                            return;
+                    if (options.showType == UIShowType.BlackBaseView) {
+                        clickBg = await view.getClickBg() ?? await this.getClickBg();
+                        if (operation.state !== "opening") {
+                            clickBg.destroy();
+                            ui.destroy();
+                            return null;
                         }
+                        layer.addChild(clickBg);
 
-                        evt.propagationStopped = true;
-                        evt.propagationImmediateStopped = true;
+                        if (view.shouldAddBlockInputEvents() && !clickBg.getComponent(BlockInputEvents)) {
+                            clickBg.addComponent(BlockInputEvents);
+                        }
+                    } else {
+                        if (view.shouldAddBlockInputEvents() && !ui.getComponent(BlockInputEvents)) {
+                            ui.addComponent(BlockInputEvents);
+                        }
+                    }
 
-                        this.closeOrPopViewInstance(view);
-                    }, this);
+                    const alias = options.viewName ?? view.viewName;
+                    const other = this._viewOperations.get(this.viewKey(alias));
+                    if (other && other !== operation && other.state !== "closed") {
+                        throw new Error(`View name already belongs to another prefab: ${alias}`);
+                    }
+                    this._viewAliases.set(alias, operation.key);
+                    operation.view = view;
+                    this._openingViews.set(operation.key, { view, clickBg });
+                    ui.once(Node.EventType.NODE_DESTROYED, () => {
+                        this.removeViewEntry(operation, clickBg);
+                        view.applyViewCloseAfter(null);
+                    });
+                    // 先登记实例，再添加节点；添加节点触发的 onLoad 可能立即请求关闭界面。
+                    layer.addChild(ui);
+                    view.afterAddChild(options, service);
+                    if (operation.state !== "opening") return null;
+
+                    if (options.pushPopView) {
+                        this._history.push(view);
+                        await view.push();
+                    }
+
+                    // 所以onShow是在onLoad之后
+                    if (operation.state !== "opening") return null;
+                    await view.applyShow();
+                    if (operation.state !== "opening") return null;
+
+                    if (clickBg && !view.isDisposed && view.canClickClose()) {
+                        clickBg.once(Node.EventType.TOUCH_START, (evt: EventTouch) => {
+                            if (view.isDisposed) {
+                                DEBUG && logger.warn("view is disposed");
+                                return;
+                            }
+
+                            evt.propagationStopped = true;
+                            evt.propagationImmediateStopped = true;
+
+                            this.closeOrPopViewInstance(view);
+                        }, this);
+                    }
+
+                    // 假如在show之后返回的面板实例已经销毁了或者父面板不存在了，那么返回这个面板已经没有了意义
+                    // 反而可能误用导致空指针异常
+
+                    logger.debug(`UIService openView ${options.prefab} success or not disposed: ${!view.isDisposed}`);
+                    return view.isDisposed ? void 0 : view;
+                } catch (error) {
+                    this.removeViewEntry(operation, clickBg);
+                    if (view.options) view.dispose();
+                    else ui.destroy();
+                    view.applyViewCloseAfter(null);
+                    throw error;
                 }
-
-                // 假如在show之后返回的面板实例已经销毁了或者父面板不存在了，那么返回这个面板已经没有了意义
-                // 反而可能误用导致空指针异常
-
-                logger.debug(`UIService openView ${options.prefab} success or not disposed: ${!view.isDisposed}`);
-                return view.isDisposed ? void 0 : view;
             } else {
 
                 logger.error(`${options.prefab} is not a BaseView`);
@@ -770,6 +872,19 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
         }
 
         return null!;
+    }
+
+    private removeViewEntry(operation: ViewOperation, clickBg?: IGameFramework.Nullable<Node>, result?: any): void {
+        clickBg?.removeFromParent();
+        clickBg?.destroy();
+        if (this._openingViews.get(operation.key)?.view === operation.view) {
+            this._openingViews.delete(operation.key);
+        }
+        if (this._viewOperations.get(operation.key) === operation) this._viewOperations.delete(operation.key);
+        const index = operation.view ? this._history.indexOf(operation.view) : -1;
+        if (index >= 0) this._history.splice(index, 1);
+        operation.state = "closed";
+        operation.resolveClosed(result);
     }
 
     /**
@@ -807,42 +922,50 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @return {*}  {Promise<boolean>}
      * @memberof UIService
      */
-    public async closeOrPopViewName<T extends BaseView<U>, U extends BaseService>(name: string): Promise<boolean> {
-        DEBUG && assert(!isEmptyStr(name), "name should not be empty");
-
-        let r: IGameFramework.Nullable<T["onClose"]> = null!;
-        const { view, clickBg } = this._openingViews.get(name) ?? {};
-        if (view) {
-            if (view.isPushPopView()) {
-                // 必须先从顶层pop push view开始关闭
-                DEBUG && assert(this.isTopPushView(view), "view should be top");
-
-                if (this.isTopPushView(view)) {
-                    let prev = this.getPrevView(view);
-                    if (prev) {
-                        // 关闭当前界面,同时打开上一个界面
-                        await Promise.all([view.pop(), prev.push()]);
-                    } else {
-                        // 关闭当前界面
-                        await view.pop();
-                        this.closePoshPopView();
-                    }
-                    return true;
-                }
-            } else {
-                r = await view.applyClose() as IGameFramework.Nullable<T["onClose"]>;
-                if (clickBg) {
-                    clickBg.removeFromParent();
-                    clickBg.destroy(); // reduce resource handle references
-                }
-                view.dispose();
-                this._openingViews.delete(name);
-                view.applyViewCloseAfter(r);
+    public async closeOrPopViewName<T extends BaseView<U>, U extends BaseService>(name: ViewTarget): Promise<boolean> {
+        const key = this.viewKey(name);
+        const operation = this._viewOperations.get(key);
+        if (!operation || operation.state === "closed") return false;
+        if (operation.closing) return operation.closing;
+        if (operation.view?.isDisposed) {
+            this.removeViewEntry(operation, this._openingViews.get(key)?.clickBg);
+            operation.view.applyViewCloseAfter(null);
+            return false;
+        }
+        if (operation.view?.isPushPopView() && !this.isTopPushView(operation.view)) return false;
+        operation.state = "closing";
+        operation.closing = Promise.resolve().then(async () => {
+            const entry = this._openingViews.get(key);
+            if (!entry || entry.view !== operation.view) {
+                this.removeViewEntry(operation);
                 return true;
             }
-        }
-
-        return false;
+            const { view, clickBg } = entry;
+            let result: any;
+            try {
+                if (view.isPushPopView()) {
+                    const prev = this.getPrevView(view);
+                    await view.pop();
+                    if (prev) {
+                        await prev.push();
+                        operation.state = "hidden";
+                        operation.closing = undefined;
+                        return true;
+                    }
+                    await this.closePoshPopView();
+                } else {
+                    result = await view.applyClose();
+                }
+                return true;
+            } finally {
+                if (operation.state !== "hidden") {
+                    this.removeViewEntry(operation, clickBg, result);
+                    try { view.dispose(); }
+                    finally { view.applyViewCloseAfter(result); }
+                }
+            }
+        });
+        return operation.closing;
     }
 
     /**
@@ -884,17 +1007,13 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @return {*}  {Promise<OnCloseReturn<T,U>>}
      * @memberof UIService
      */
-    public async closeViewNameAfter<T extends BaseView<U>, U extends BaseService>(name: string): Promise<OnCloseReturn<T, U>> {
-        const { view, clickBg } = this._openingViews.get(name) ?? {};
-        if (!view) {
-            throw new Error("view not found");
-        }
-
-        if (view.isPushPopView()) {
+    public async closeViewNameAfter<T extends BaseView<U>, U extends BaseService>(name: ViewTarget): Promise<OnCloseReturn<T, U>> {
+        const operation = this._viewOperations.get(this.viewKey(name));
+        if (!operation) return null;
+        if (operation.view?.isPushPopView()) {
             throw new Error("view is push pop view");
         }
-
-        return view.viewCloseAfter() as OnCloseReturn<T, U>;
+        return operation.closed;
     }
 
     public async openWaitMode(): Promise<IGameFramework.Nullable<BaseView<BaseService, void>>> {
@@ -1017,16 +1136,24 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @private
      * @memberof UIService
      */
-    private closePoshPopView() {
-        for (let view of this._history) {
-            view.onClose();
-            view.dispose();
+    private async closePoshPopView(): Promise<void> {
+        const errors: unknown[] = [];
+        for (let view of [...this._history]) {
             const key = this.getOpenViewKey(view);
-            if (key) {
-                this._openingViews.delete(key);
+            const operation = key ? this._viewOperations.get(key) : undefined;
+            let result: any;
+            try {
+                result = await view.applyClose();
+            } catch (error) {
+                errors.push(error);
+            } finally {
+                if (operation?.view === view) this.removeViewEntry(operation, undefined, result);
+                try { view.dispose(); }
+                finally { view.applyViewCloseAfter(result); }
             }
         }
         this._history.length = 0;
+        if (errors.length) throw errors[0];
     }
 
     /**
@@ -1038,17 +1165,9 @@ export class UIService extends EventDispatcher<EventOverview> implements IGameFr
      * @memberof UIService
      */
     private isTopPushView<U extends BaseService>(view: BaseView<U>): boolean {
-        let index = this._history.length - 1;
-        if (index < 0) return true;
-
-        let tail = this._history[index];
-        if (!tail) return false;
-        let forefatherAllPop = false;
-        while (tail) {
-            if (tail == view) return true;
-            forefatherAllPop = tail.isPop();
-            if (forefatherAllPop) return false;
-            tail = this._history[--index];
+        for (let index = this._history.length - 1; index >= 0; index--) {
+            const current = this._history[index];
+            if (!current.isPop()) return current === view;
         }
         return false;
     }

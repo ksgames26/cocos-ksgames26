@@ -42,7 +42,7 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
     private _room: IGameFramework.Nullable<Room> = null;
     private _joinByID: boolean = false;
 
-    /** One final response, selected from a named set of protobuf codecs. */
+    /** 等待一次最终响应，并根据协议编号从具名的 protobuf 编解码器集合中选择对应类型。 */
     public async sendRequest<I, const R extends ResponseMap>(
         request: ResponseCodec<I> & { toBinary(body: I): Uint8Array },
         body: NoInfer<I>,
@@ -143,7 +143,7 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
         return true;
     }
 
-    /** Consume each one-use reservation once; a retry must obtain a new seat from LG. */
+    /** 每份一次性席位预留只能消费一次；重试前必须向登录网关 LG 获取新的席位。 */
     public async consumeSeatReservation(reservation: Colyseus.SeatReservation): Promise<boolean> {
         if (this._disposed || this._room) {
             return false;
@@ -362,7 +362,11 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
 
         const inst = await this._connect(3, roomNameOrID, joinData);
         if (inst) {
-            // The framework owns reconnect/login policy; avoid a second SDK retry loop.
+            if (this._disposed) {
+                await inst.leave();
+                return false;
+            }
+            // 重连和登录策略由框架统一管理，关闭 SDK 自带的重试循环，避免重复重连。
             inst.reconnection.enabled = false;
             let impl = ctor ?? Room;
             this._room = new impl(roomNameOrID, inst).listen(this);
@@ -377,6 +381,7 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
     }
 
     private async _connect<T>(count: number, roomNameOrID: string, joinData: T): Promise<IGameFramework.Nullable<Colyseus.Room>> {
+        if (this._disposed) return null;
         try {
 
             let inst: Colyseus.Room | null = null;

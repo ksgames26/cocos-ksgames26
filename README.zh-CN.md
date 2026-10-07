@@ -19,6 +19,8 @@ npm install
 npm run build
 ```
 
+运行 `npm run test:runtime` 可执行网络连接取消、目录加载失败、批量资源加载和音乐切换的回归测试。测试使用实际运行时源码及模拟引擎依赖，不替代 Creator 或设备实测。目录加载失败会向调用方抛出错误；音乐切换、停止或服务销毁后，旧的异步加载结果不会再触发播放。
+
 构建完成后：
 
 - 编辑器扩展入口输出到 `dist/*`
@@ -176,6 +178,12 @@ import { UIService, SceneService, TaskService } from "db://ksgames26/game-framew
 
 #### 1. `UIService`
 
+界面生命周期由 `getViewState(nameOrOptions)` 查询，返回 `closed`、`opening`、`open`、`closing` 或 `hidden`（Push/Pop 隐藏）。`hasOpenView` 在 `opening/open` 时返回 true；`getOpenView` 只返回完成打开的有效实例。收到关闭请求后立即进入 `closing`，即使资源还未加载也可以取消打开。同一名称重复打开复用当前任务或实例；普通界面关闭期间再次打开会等待旧实例清理，旧回调不会移除新实例。重复关闭共用一次关闭流程，生命周期异常也会清理节点和登记状态。
+
+若需要在首次资源加载前按字符串或类名查询、关闭，必须在 `OpenViewOptions.viewName` 中显式填写相同名称。未命名的旧调用仍可使用，但首次加载前应传 `OpenViewOptions` 本身，例如 `ui.hasOpenView(options)`、`ui.closeOrPopViewName(options)`；框架不会从资源路径猜测组件类名。`closeViewNameAfter` 也支持 options，并绑定调用时的那一轮打开，不会等待后来重新打开的界面。
+
+`ViewLock.closeView()` 可以取消 `beforeTask` 或资源加载期间的打开；随后再次打开会建立新一轮请求。引用计数模式仍须配对 open/close，计数归零才关闭。`clear()` 为终止操作，之后不可再复用该锁。自定义异步 `onShow` 或动画在等待后应检查 `isDisposed`；框架无法中断业务回调内部的任意 Promise。
+
 - 整个 UI 系统的核心调度器
 - 负责：
   - 打开与关闭 `BaseView`
@@ -208,6 +216,27 @@ import { UIService, SceneService, TaskService } from "db://ksgames26/game-framew
 - 适合大厅、战斗、房间、地图等“场景切换驱动”的项目结构
 
 #### 3. `AssetService`
+
+`load(bundle, type, path)` 会创建或复用资源句柄，等待资源加载成功后返回句柄；失败时抛出错误：
+
+```ts
+const atlas = await assetService.load("ui", SpriteAtlas, "icons");
+atlas.setAtlasFrame(sprite, "gold");
+```
+
+加载接口不会自动增减引用，使用方通过绑定、实例化或配对的 `addRef` / `releaseAsset` 管理引用。
+
+图集引用按 Sprite 当前绑定管理：一个 Sprite 对当前图集持有一份引用，同图集换帧不重复增加；换图集或换为独立 SpriteFrame 时，先绑定新图片再释放旧引用。多个 Sprite 使用同一图集时分别计数，全部释放后才满足框架回收条件。绑定接口自行持有引用，不需要额外调用 `addRef`。
+
+```ts
+const atlas = assetService.getOrCreateAssetHandle("ui", SpriteAtlas, "icons");
+await atlas.safeGetAsset();
+atlas.setAtlasFrame(sprite, "gold");
+atlas.setAtlasFrame(sprite, "diamond"); // 同一图集换帧，引用数量不变。
+assetService.clearSpriteFrame(sprite); // 归还对象池时，清空图片并释放绑定。
+```
+
+节点销毁会自动释放绑定；仅隐藏节点或禁用 Sprite 会保留引用。单独移除 Sprite 组件前也应调用 `clearSpriteFrame`。直接写入 `sprite.spriteFrame` 不会通知框架释放旧绑定，应统一使用 `setSpriteFrameByAtlas`、`setSpriteFrame` 或句柄的绑定接口。默认 `doDestroy=false`，零引用资源保留缓存，可集中调用 `releaseUnusedAssets()` 回收；传 true 则在本次绑定释放且引用归零时回收资源。同一绑定再次设置时，以最后一次传入的回收策略为准。图集需先加载，指定帧不存在时抛出错误并保留原绑定。
 
 - 负责统一资源加载、缓存、引用计数和释放
 - 核心概念是 `AssetHandle`

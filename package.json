@@ -8,7 +8,8 @@
     "scripts": {
         "preinstall": "node ./scripts/preinstall.js",
         "build": "node scripts/sync-colyseus.mjs && tsc",
-        "sync:colyseus": "node scripts/sync-colyseus.mjs"
+        "sync:colyseus": "node scripts/sync-colyseus.mjs",
+        "test:runtime": "node --test scripts/test-runtime-lifecycle.mjs scripts/test-ui-lifecycle.mjs"
     },
     "description": "i18n:ksgames26.description",
     "main": "./dist/main.js",

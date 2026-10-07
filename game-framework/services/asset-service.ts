@@ -330,6 +330,16 @@ class AssetHandle<T extends IGameFramework.Constructor<Asset>> {
         const assetSvr = Container.get(AssetService)!;
         assetSvr.setSpriteFrame(spr, this as unknown as AssetHandle<typeof SpriteFrame>, doDestroy);
     }
+
+    /** 使用图集中的指定帧；引用由 Sprite 当前绑定持有，同图集换帧不重复计数。 */
+    public setAtlasFrame(spr: Sprite, frame: string, doDestroy: boolean = false): void {
+        if (js.getClassName(this.type) !== js.getClassName(SpriteAtlas)) {
+            throw new Error("setAtlasFrame 仅支持 SpriteAtlas 资源句柄");
+        }
+        Container.get(AssetService)!.setSpriteFrameByAtlas(
+            spr, this as unknown as AssetHandle<typeof SpriteAtlas>, frame, doDestroy,
+        );
+    }
 }
 
 /**
@@ -403,12 +413,13 @@ export class MultiAssetsHandle {
 export class AsyncLoadDelegate<T extends { name: string, progress: number }> extends AsyncTask<T> implements IGameFramework.IAsyncTask<T> {
     private _bundleUrls: Set<string> = new Set<string>();
     private _assets: AssetHandle<typeof Asset>[] = [];
-
     public constructor(assets: AssetHandle<typeof Asset>[], bundleUrls?: Set<string>) {
         super(Container.get(TaskService)!);
 
         if (!bundleUrls) {
-            assets.forEach(assetInfo => this._bundleUrls!.add(assetInfo.bundle));
+            assets.forEach(assetInfo => {
+                if (!assetInfo.internet) this._bundleUrls.add(assetInfo.bundle);
+            });
         } else {
             this._bundleUrls = bundleUrls;
         }
@@ -451,6 +462,7 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
         let count = 0.1;
         let doFlag = true;
         let completeOrError = false;
+        let failure: Error | null = null;
 
         let info = `正在加载${assetInfo.path}目录`;
 
@@ -462,18 +474,19 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
         }, (err, data) => {
             completeOrError = true;
             if (err) {
-                logger.error("load dir failed", err);
+                failure = err;
             }
         });
 
         const tasks = Container.get(TaskService)!;
         while (doFlag) {
+            if (failure) throw failure;
             let handle = tasks.waitNextFrame<T>();
             let value = { name: info, progress: 0 } as T;
             if (count != 0) {
                 value = { name: info, progress: progress / count } as T;
             }
-            if (progress >= count && completeOrError) {
+            if (completeOrError) {
                 doFlag = false;
             }
 
@@ -494,6 +507,7 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
         let progress = 0;
         let count = 0;
         let doFlag = true;
+        let failure: Error | null = null;
 
         let info = "正在加载[bundle]: ";
 
@@ -506,7 +520,7 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
                 assetManager.loadBundle(bundleUrl, null, (error, data) => {
                     progress++;
                     if (error) {
-                        logger.error("load bundle failed", error);
+                        failure = error;
                     }
                 });
             }
@@ -514,6 +528,7 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
 
         const tasks = Container.get(TaskService)!;
         while (doFlag) {
+            if (failure) throw failure;
             let handle = tasks.waitNextFrame<T>();
 
             let value = { name: info, progress: 0 } as T;
@@ -542,9 +557,10 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
         let progress = 0;
         let count = 0;
         let allComplete = false;
+        let failure: Error | null = null;
 
         let internetCount = 0;
-        let assets = new Map<string, { finished: number, total: number, done: boolean }>();
+        const assets: { finished: number, total: number, done: boolean }[] = [];
 
         let assetSvr = Container.get(AssetService)!;
         let info = "正在加载[assets]: ";
@@ -556,11 +572,14 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
                 internetCount++;
                 assetSvr!.
                     loadAssetAsync(asset)
-                    .then(() => {
+                    .then((loaded) => {
+                        if (!loaded) throw new Error(`资源加载失败：${asset.path}`);
                         internetCount--;
                     }).catch(err => {
+                        failure = err;
                         internetCount--;
                     });
+                continue;
             }
 
             if (!asset.isDir() && assetSvr.getAsset(asset)) {
@@ -572,42 +591,38 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
 
             // 加载文件夹
             if (asset.isDir()) {
-                assets.set(asset.bundle, { finished: 0, total: 0, done: false });
-
-                DEBUG && assert(!asset.path, "load dir must not have path");
+                const itemInfo = { finished: 0, total: 0, done: false };
+                assets.push(itemInfo);
 
                 bundle.loadDir(asset.path, (finished: number, total: number, item: AssetManager.RequestItem) => {
 
                     // 这里的finished和total并不是一开始就是确定的
                     // 每次回调都会不断地更新
-                    const itemInfo = assets.get(asset.bundle)!;
                     itemInfo.finished = finished;
                     itemInfo.total = total;
 
                     info = `正在加载 ${this.getInfoName(item)}`;
                 }, (err, data) => {
-                    const itemInfo = assets.get(asset.bundle)!;
                     itemInfo.done = true;
 
                     if (err) {
-                        logger.error("load dir failed", err);
+                        failure = err;
                     }
                 });
             } else {
-                assets.set(asset.path, { finished: 0, total: 0, done: false });
+                const itemInfo = { finished: 0, total: 0, done: false };
+                assets.push(itemInfo);
                 // 加载零零散散的资源
                 bundle.load(asset.path, asset.type, (finished: number, total: number, item: AssetManager.RequestItem) => {
-                    const itemInfo = assets.get(asset.path)!;
                     itemInfo.finished = finished;
                     itemInfo.total = total;
 
                     info = `正在加载 ${this.getInfoName(item)}`;
                 }, (error, data) => {
-                    const itemInfo = assets.get(asset.path)!;
                     itemInfo.done = true;
 
                     if (error) {
-                        logger.error("load bundle failed", error);
+                        failure = error;
                     }
                 });
             }
@@ -615,6 +630,7 @@ export class AsyncLoadDelegate<T extends { name: string, progress: number }> ext
 
         const tasks = Container.get(TaskService)!;
         while (!allComplete) {
+            if (failure) throw failure;
             let handle = tasks.waitNextFrame<T>();
 
             count = 0;
@@ -726,6 +742,13 @@ class GFBundle extends AssetManager.Bundle {
  */
 @ccclass("AssetService")
 export class AssetService {
+
+    // 每个 Sprite 只持有当前图集或独立帧的一份引用，切换资源时替换这份绑定。
+    private _spriteBindings = new WeakMap<Sprite, {
+        handle: AssetHandle<typeof SpriteAtlas> | AssetHandle<typeof SpriteFrame>;
+        doDestroy: boolean;
+        onDestroy: () => void;
+    }>();
 
     private _idGenerator = new js.IDGenerator("AssetService");
     private _handles: Map<number | string, AssetHandle<typeof Asset>> = new Map<number | string, AssetHandle<typeof Asset>>();
@@ -849,6 +872,17 @@ export class AssetService {
         return handle;
     }
 
+    /** 加载单个资源并返回统一缓存中的句柄；加载失败抛出错误，成功不会额外增加业务引用。 */
+    public async load<T extends IGameFramework.Constructor<Asset>>(
+        bundle: string, type: T, path: string,
+    ): Promise<AssetHandle<T>> {
+        const handle = this.getOrCreateAssetHandle(bundle, type, path);
+        if (handle.isDir()) throw new Error("目录资源请使用 loadDir 加载");
+        const asset = await this.loadAssetAsync(handle);
+        if (!asset) throw new Error(`资源加载失败：${bundle}/${path}`);
+        return handle;
+    }
+
     /**
      * 创建一个资源唯一Key
      *
@@ -960,15 +994,11 @@ export class AssetService {
      * @memberof AssetService
      */
     public setSpriteFrameByAtlas(sprite: Sprite, handle: AssetHandle<typeof SpriteAtlas>, frame: string, doDestroy: boolean = false): void {
-        const p = this.getAsset(handle);
-        DEBUG && assert(!!p, "asset is null");
-
-        handle.addRef();
-        sprite.node.on(Node.EventType.NODE_DESTROYED, () => {
-            handle.releaseAsset(doDestroy);
-        });
-
-        sprite.spriteFrame = p!.getSpriteFrame(frame);
+        const atlas = this.getAsset(handle);
+        if (!atlas) throw new Error(`图集尚未加载：${handle.path}`);
+        const spriteFrame = atlas.getSpriteFrame(frame);
+        if (!spriteFrame) throw new Error(`图集中不存在指定帧：${handle.path}/${frame}`);
+        this.bindSpriteFrame(sprite, handle, spriteFrame, doDestroy);
     }
 
     /**
@@ -979,16 +1009,57 @@ export class AssetService {
      * @param {boolean} doDestroy 销毁节点是否销毁资源句柄
      * @memberof AssetService
      */
-    public setSpriteFrame(sprite: Sprite, handle: AssetHandle<typeof SpriteFrame>, doDestroy: boolean): void {
-        const p = this.getAsset(handle);
-        DEBUG && assert(!!p, "asset is null");
+    public setSpriteFrame(sprite: Sprite, handle: AssetHandle<typeof SpriteFrame>, doDestroy: boolean = false): void {
+        const frame = this.getAsset(handle);
+        if (!frame) throw new Error(`精灵帧尚未加载：${handle.path}`);
+        this.bindSpriteFrame(sprite, handle, frame, doDestroy);
+    }
 
+    /** 清空图片并释放当前绑定；归还对象池或单独移除 Sprite 组件前调用。重复调用不会重复减引用。 */
+    public clearSpriteFrame(sprite: Sprite): void {
+        if (sprite.isValid) sprite.spriteFrame = null;
+        this.releaseSpriteBinding(sprite);
+    }
+
+    private bindSpriteFrame(
+        sprite: Sprite,
+        handle: AssetHandle<typeof SpriteAtlas> | AssetHandle<typeof SpriteFrame>,
+        frame: SpriteFrame,
+        doDestroy: boolean,
+    ): void {
+        if (!sprite.isValid || !sprite.node.isValid) throw new Error("无法给已销毁的 Sprite 绑定图片");
+        const previous = this._spriteBindings.get(sprite);
+        if (previous?.handle === handle) {
+            sprite.spriteFrame = frame;
+            previous.doDestroy = doDestroy;
+            return;
+        }
+
+        // 先持有新资源并更新图片，再释放旧资源，避免切换时提前释放仍在显示的纹理。
         handle.addRef();
-        sprite.node.on(Node.EventType.NODE_DESTROYED, () => {
-            handle.releaseAsset(doDestroy);
-        });
+        try {
+            sprite.spriteFrame = frame;
+        } catch (error) {
+            handle.releaseAsset(false);
+            throw error;
+        }
+        this.releaseSpriteBinding(sprite);
+        const binding = {
+            handle, doDestroy,
+            onDestroy: () => {
+                if (this._spriteBindings.get(sprite) === binding) this.releaseSpriteBinding(sprite);
+            },
+        };
+        this._spriteBindings.set(sprite, binding);
+        sprite.node.once(Node.EventType.NODE_DESTROYED, binding.onDestroy);
+    }
 
-        sprite.spriteFrame = p!;
+    private releaseSpriteBinding(sprite: Sprite): void {
+        const binding = this._spriteBindings.get(sprite);
+        if (!binding) return;
+        this._spriteBindings.delete(sprite);
+        sprite.node.off(Node.EventType.NODE_DESTROYED, binding.onDestroy);
+        binding.handle.releaseAsset(binding.doDestroy);
     }
 
     /**
