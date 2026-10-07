@@ -1,3 +1,4 @@
+import { type ResponseCodec, type ResponseMap, type ResponseResult } from "./protocol-request";
 import { assert } from "cc";
 import { DEBUG } from "cc/env";
 import { C2S_Request, colyseus } from "./colyseus";
@@ -40,6 +41,32 @@ export class ColyseusSdk implements IGameFramework.IDisposable {
     private _client!: Colyseus.Client;
     private _room: IGameFramework.Nullable<Room> = null;
     private _joinByID: boolean = false;
+
+    /** One final response, selected from a named set of protobuf codecs. */
+    public async sendRequest<I, const R extends ResponseMap>(
+        request: ResponseCodec<I> & { toBinary(body: I): Uint8Array },
+        body: NoInfer<I>,
+        responses: R,
+        timeoutMs = 20000,
+    ): Promise<ResponseResult<R>> {
+        const room = this._room;
+        if (this._disposed || !room || room.isDisposed || !room.isOpen) {
+            throw new Error('Room is not connected');
+        }
+        const serializer = Container.getInterface('IGameFramework.ISerializable');
+        const envelope = serializer?.createByName<C2S_Request & IGameFramework.ISerializer>('C2S_Request');
+        if (!serializer || !envelope) throw new Error('Server protocol is not initialized');
+        envelope.reqUniqueId = this.reqUniqueId;
+        envelope.reqBodyId = request.protoId;
+        envelope.reqBody = request.toBinary(body);
+        const bytes = serializer.encoder(envelope);
+        return room.protocolRequests.request(
+            envelope.reqUniqueId,
+            responses,
+            () => room.send(C2S_MESSAGE, bytes),
+            timeoutMs,
+        );
+    }
 
     public get reqUniqueId() {
         return this._reqUniqueId++;

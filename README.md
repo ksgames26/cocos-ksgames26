@@ -375,3 +375,10 @@ This package can be used as:
 - an editor-side i18n toolchain
 - protobuf / Colyseus integration infrastructure
 - a single-package distribution form for a team's internal extension stack
+
+
+### Typed protobuf responses
+
+`await sdk.sendRequest(RequestCodec, body, { started: StartedCodec, queued: QueuedCodec }, 20000)` returns `{ kind, body }`. Check `kind` to narrow the body type. This API rejects on server errors, invalid response IDs, decoding or send failures, timeout and room closure; legacy `sendMessage` remains unchanged.
+
+In your `Room.decoderS2CMessageHandle`, decode the envelope first, then run `if (this.protocolRequests.accept(envelope)) return;` **before** legacy body decoding and dispatch. Dispose the room when replacing connections so outstanding requests are rejected. Response maps must be nonempty with unique protocol IDs.

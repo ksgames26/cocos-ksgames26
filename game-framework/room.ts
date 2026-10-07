@@ -1,3 +1,4 @@
+import { ProtocolRequests } from "./protocol-request";
 import { assert } from "cc";
 import { DEBUG } from "cc/env";
 import { EventDispatcher } from "./core/event-dispatcher";
@@ -7,6 +8,8 @@ import { S2C_MESSAGE } from "./core/misc";
 import { logger } from "./core/log";
 
 export class Room extends EventDispatcher<EventOverview> implements IGameFramework.IDisposable {
+    public readonly protocolRequests = new ProtocolRequests();
+
     protected _inst!: Colyseus.Room;
     protected _name: string = "";
     private _disposed: boolean = false;
@@ -36,6 +39,8 @@ export class Room extends EventDispatcher<EventOverview> implements IGameFramewo
      *     return;
      * }
      * 
+     * if (this.protocolRequests.accept(s2c)) return;
+     *
      * let unpack: unknown = null;
      * if (s2c.resCode == 0) {
      *     DEBUG && assert(!!decoder, "IGameFramework.ISerializable not found.");
@@ -76,6 +81,7 @@ export class Room extends EventDispatcher<EventOverview> implements IGameFramewo
     public dispose(): void {
         if (this._disposed) return;
         this._disposed = true;
+        this.protocolRequests.close();
         void this._inst.leave();
     }
 
@@ -187,6 +193,7 @@ export class Room extends EventDispatcher<EventOverview> implements IGameFramewo
 
         // 监听离开
         room.onLeave((code) => {
+            this.protocolRequests.close();
             if (dispatcher.has("onLeave")) {
                 const message = {
                     room: this,
