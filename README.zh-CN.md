@@ -27,6 +27,8 @@ npm run build
 - 运行时源码位于 `game-framework/*`
 - 运行时独立类型检查可使用 `tsconfig.game-framework.json`
 
+`dist/` 是生成目录，不纳入 Git 跟踪。新克隆后先构建，再在 Creator 中加载扩展；分发扩展包时仍需包含构建完成的 `dist/` 文件。在游戏主项目执行 `pnpm run setup` 会构建扩展，后续可执行 `pnpm client:build` 重新构建。
+
 ## 功能概览
 
 ### 编辑器侧

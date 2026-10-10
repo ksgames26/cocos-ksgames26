@@ -27,6 +27,8 @@ After building:
 - Runtime source code lives in `game-framework/*`
 - Standalone runtime type checking can be done with `tsconfig.game-framework.json`
 
+`dist/` is generated output and is not tracked by Git. Build the extension before opening it in Creator after a fresh clone. Distribution packages must include the built `dist/` files. In the game workspace, `pnpm run setup` builds the extension, and `pnpm client:build` rebuilds it.
+
 ## Feature Overview
 
 ### Editor Features
