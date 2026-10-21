@@ -1,5 +1,7 @@
 # ksgames26
 
+独立 HTTP 游戏服务器客户端使用 `HttpGameClient`，支持游客登录、按服务地址/区服隔离凭据、会话续期、JSON 请求和退出取消，完整说明见 [HTTP.md](HTTP.md)。
+
 `ksgames26` 是一个面向 Cocos Creator `3.8.7+` 的综合扩展包，包含两部分能力：
 
 - 编辑器扩展：面板、菜单、Inspector 扩展、Hierarchy 菜单、Scene 扩展、资产菜单、i18n 配置解析与监听、项目模板生成。

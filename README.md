@@ -69,6 +69,7 @@ Main exported runtime areas include:
 - `i18n`: `I18NLabel`, `I18NRichText`, `I18NSprite`, and `I18NService`.
 - `protobuf` / `protobuf-ts`: protobuf runtime and message type support.
 - `client` / `room` / `colyseus`: networking and room-related runtime support.
+- `http-client`: `HttpGameClient` for independent HTTP game servers, including guest login, scoped credentials, session renewal, JSON requests, deadlines and disposal. See [HTTP.md](HTTP.md).
 - `structures` / `utils` / `intelligence` / `camera`: data structures, timers, state machines, camera helpers, and other utilities.
 
 ### `model-view` In Detail

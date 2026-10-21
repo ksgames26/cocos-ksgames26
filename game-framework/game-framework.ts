@@ -69,3 +69,4 @@ export * from "./room";
 export type * as colyseus from "./colyseus-cocos-creator";
 
 export * from "./protocol-request";
+export * from "./http-client";
