@@ -54,6 +54,8 @@ void session.reportChecksum().catch(handleNetworkError);
 
 ## 短重连
 
+请求编号随底层连接单调递增；销毁或重建 lobby 包装器不会复用旧编号，迟到回复不会命中新请求。只读 sync 收到 `REPLAY_RATE_LIMIT` 后按服务端 1–1000ms 的提示等待，同一页最多重试 3 次；销毁或换连接会立即取消等待。输入和不确定是否送达的超时不重试。服务器的补帧与输入使用独立限流预算。
+
 ```ts
 // 原连接意外 onLeave 时立即保存/使用 token；不要主动 leave 来模拟重连。
 const token = native.reconnectionToken;

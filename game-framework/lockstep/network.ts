@@ -31,8 +31,18 @@ export interface LockstepRankProfile {
     rank: { tier: number; name: string; minimumMmr: number };
 }
 export type LockstepRatingStatus = "unrated" | "pending" | "settled" | "failed";
+// 序号随底层连接存活，避免销毁包装器后旧响应命中新请求。
+const requestSequences = new WeakMap<LockstepConnection, number>();
+class ReplayRateLimit extends Error {
+    constructor(readonly retryAfterMs: number) {
+        super("Lockstep replay rate limited");
+    }
+}
 class Requests {
-    private sequence = 0;
+    private waits = new Map<
+        ReturnType<typeof setTimeout>,
+        (error: Error) => void
+    >();
     private pending = new Map<
         number,
         {
@@ -53,15 +63,26 @@ class Requests {
             if (!request) return;
             this.pending.delete(message.id);
             clearTimeout(request.timer);
-            message.ok
-                ? request.resolve(message.value)
-                : request.reject(new Error("Lockstep request rejected"));
+            if (message.ok) request.resolve(message.value);
+            else if (
+                message.code === "REPLAY_RATE_LIMIT" &&
+                Number.isInteger(message.retryAfterMs) &&
+                message.retryAfterMs > 0 &&
+                message.retryAfterMs <= 1000
+            )
+                request.reject(new ReplayRateLimit(message.retryAfterMs));
+            else request.reject(new Error("Lockstep request rejected"));
         });
     }
     request(body: object): Promise<any> {
         if (this.closed)
             return Promise.reject(new Error("Lockstep transport is closed"));
-        const id = ++this.sequence;
+        const id = (requestSequences.get(this.room) ?? 0) + 1;
+        if (!Number.isSafeInteger(id))
+            return Promise.reject(
+                new Error("Lockstep request sequence exhausted"),
+            );
+        requestSequences.set(this.room, id);
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pending.delete(id);
@@ -77,6 +98,26 @@ class Requests {
             }
         });
     }
+    /** 只读补帧遇到明确限流才重试，关闭连接时立即取消等待。 */
+    async replay(from: number): Promise<any> {
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this.request({ op: "sync", from });
+            } catch (error) {
+                if (!(error instanceof ReplayRateLimit) || attempt >= 3)
+                    throw error;
+                await new Promise<void>((resolve, reject) => {
+                    if (this.closed)
+                        return reject(new Error("Lockstep transport closed"));
+                    const timer = setTimeout(() => {
+                        this.waits.delete(timer);
+                        resolve();
+                    }, error.retryAfterMs);
+                    this.waits.set(timer, reject);
+                });
+            }
+        }
+    }
     close(): void {
         if (this.closed) return;
         this.closed = true;
@@ -86,6 +127,11 @@ class Requests {
             request.reject(new Error("Lockstep transport closed"));
         }
         this.pending.clear();
+        for (const [timer, reject] of this.waits) {
+            clearTimeout(timer);
+            reject(new Error("Lockstep transport closed"));
+        }
+        this.waits.clear();
     }
 }
 
@@ -180,7 +226,7 @@ export class NetworkLockstepSession {
         let from = this.driver.runner.nextFrame;
         let target: number | undefined;
         do {
-            const value = await this.requests.request({ op: "sync", from });
+            const value = await this.requests.replay(from);
             if (
                 JSON.stringify(value.manifest) !== JSON.stringify(this.manifest)
             )
