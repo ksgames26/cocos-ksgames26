@@ -69,6 +69,8 @@ if (!session.started && !session.endReason) await session.ready(loadedContentHas
 
 Transport 关闭 SDK 自动重连，避免未经历史同步直接恢复游戏。游戏在网络错误回调中安排短窗口内有限重试，处理窗口到期；不要每个 update 并发重连。补历史按本地下一帧分页拉取，网络仍可接收新帧；缺帧不模拟，不跳到当前帧。不持久化 reconnectionToken 到公开日志。服务端首版窗口默认 15 秒，主动离开、到期或 FS 重启均不能恢复原比赛。
 
+FS 只接受已经识别的断线预约，旧连接仍活动、预约已消费或窗口到期时 HTTP 返回 409，不会通过重连请求踢掉现有连接。意外断线后先关闭旧传输，在自身截止时间内有限重试；迟到的重复 HTTP/WS 请求不能接管已经恢复的连接。
+
 `session.reconnect(native)` 接管传入的新连接；等待旧请求期间若会话被 dispose，或新连接补帧失败，会移除监听并关闭该新连接。并发 reconnect 会拒绝额外调用并关闭其额外连接，当前重连继续执行。退出后不会重新绑定已销毁的会话。传输可选提供 `connection.isOpen`（原生 Colyseus 已提供），已断开的连接退出时直接完成清理，不再等待第二次离房通知。
 
 ## 赛车与 Jolt 接口边界
