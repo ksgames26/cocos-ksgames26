@@ -17,6 +17,14 @@ export interface LockstepMatchResult {
     manifest?: LockstepManifest;
     reservation?: unknown;
 }
+export interface LockstepRankProfile {
+    queueId: string;
+    seasonId: string;
+    mmr: number;
+    games: number;
+    rank: { tier: number; name: string; minimumMmr: number };
+}
+export type LockstepRatingStatus = "unrated" | "pending" | "settled" | "failed";
 class Requests {
     private sequence = 0;
     private pending = new Map<
@@ -90,6 +98,10 @@ export class LockstepLobbyClient {
     cancel(): Promise<LockstepMatchResult> {
         return this.requests.request({ op: "cancel" });
     }
+    /** 查询当前登录身份的评分与段位，不允许传入其他玩家身份。 */
+    profile(queueId: string): Promise<LockstepRankProfile> {
+        return this.requests.request({ op: "profile", queueId });
+    }
     /** 仅释放匹配监听，不断开由应用持有的 GS 大厅连接。 */
     dispose(): void {
         this.requests.close();
@@ -103,6 +115,8 @@ export class NetworkLockstepSession {
     actorId = "";
     started = false;
     endReason = "";
+    ratingStatus: LockstepRatingStatus = "unrated";
+    onRating?: (status: LockstepRatingStatus) => void;
     onDesync?: (frame: number) => void;
     private requests: Requests;
     private removers: (() => void)[] = [];
@@ -136,6 +150,10 @@ export class NetworkLockstepSession {
             room.onMessage("ls:end", (message) => {
                 this.endReason = message.reason;
             }),
+            room.onMessage("ls:rating", (message) => {
+                this.ratingStatus = message.status;
+                this.onRating?.(message.status);
+            }),
             room.onMessage("ls:desync", (message) => {
                 this.endReason = "desync";
                 this.onDesync?.(message.frame);
@@ -163,6 +181,7 @@ export class NetworkLockstepSession {
             this.actorId = value.actorId;
             this.started = value.started;
             this.endReason = value.ended;
+            this.ratingStatus = value.ratingStatus ?? "unrated";
             target ??= value.nextFrame;
             for (const frame of value.frames) this.driver.receive(frame);
             if (from < target && value.frames.length === 0)

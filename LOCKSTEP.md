@@ -2,7 +2,13 @@
 
 从 `game-framework/game-framework` 公开导入。旧 `IGameFramework.IFrameSync`、`IEnv.frameSyncConf` 已删除；使用明确的 manifest、输入、帧和 simulation 接口，不再通过空配置启用旧实现。
 
-## 单机
+## MMR 与段位查询
+
+在已登录的 GS 上使用 `await lobby.profile(queueId)` 获取当前玩家的 `LockstepRankProfile`（queueId、seasonId、mmr、games、rank.tier/name/minimumMmr）。服务器决定评分与段位，客户端不上传 MMR、赛季或目标身份。profile 与 join/poll/cancel 共用至少 200ms 的请求间隔。
+
+`NetworkLockstepSession.ratingStatus` 为 `unrated/pending/settled/failed`，可通过 `onRating(status)` 接收变更；补帧 sync 同样恢复状态。settled 后从 GS 再查 profile 获取最新分数，failed 表示未能确认结算，应查询服务器审计结果。结束比赛不等于已经计分；服务器未配置可信玩法验证器时为 unrated。帧同步及哈希一致本身不能证明名次有效。
+
+## 单机执行
 
 游戏实现 `LockstepSimulation`：`reset(manifest)` 创建初始状态；`step(frame, dt)` 按输入更新；`checksum()` 返回完整确定性状态哈希。异步资源加载在创建 driver 前完成。
 

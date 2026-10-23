@@ -69,6 +69,49 @@ class Simulation {
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test("评分查询关联应答，结算状态通知与补帧恢复一致", async () => {
+  const room = new Connection();
+  const lobby = new LockstepLobbyClient(room);
+  const request = lobby.profile("race");
+  assert.deepEqual(room.sent.at(-1).body, {
+    op: "profile",
+    queueId: "race",
+    id: 1,
+  });
+  const profile = {
+    mmr: 1100,
+    games: 3,
+    rank: { tier: 2, name: "新秀", minimumMmr: 1100 },
+    queueId: "race",
+    seasonId: "s1",
+  };
+  room.reply(profile, true, "ls:match-reply");
+  assert.deepEqual(await request, profile);
+  lobby.dispose();
+  const session = new NetworkLockstepSession(room, manifest, new Simulation());
+  let notified;
+  session.onRating = (status) => {
+    notified = status;
+  };
+  room.emit("ls:rating", { status: "settled" });
+  assert.equal(session.ratingStatus, "settled");
+  assert.equal(notified, "settled");
+  const syncing = session.synchronize();
+  room.reply({
+    manifest,
+    actorId: "a",
+    started: true,
+    ended: "frame-limit",
+    ratingStatus: "failed",
+    nextFrame: 0,
+    frames: [],
+  });
+  await syncing;
+  assert.equal(session.ratingStatus, "failed");
+  await session.dispose();
+  assert.equal(room.listeners.size, 0);
+});
+
 test("lobby disposal rejects pending requests and preserves the application GS connection", async () => {
   const room = new Connection();
   const lobby = new LockstepLobbyClient(room);

@@ -1,5 +1,5 @@
 // 由消费项目的 scripts/sync-lockstep.mjs 自动生成，请勿手改。
-// 源文件 SHA-256：315a99ebea96897f7c7c9b8b31b5ed22eeccf2bc11d0c9f5de5d0ebea2f0907d
+// 源文件 SHA-256：c65ace830dcb8851f14b078f197ac9612b4508e4b11ae7f65e9b04d9d0f84c61
 /** 与引擎无关的帧同步契约；本文件是 Cocos 运行时镜像的唯一源文件。 */
 export const LOCKSTEP_VERSION = 1 as const;
 export type LockstepCommand = readonly number[];
@@ -86,7 +86,7 @@ export class LockstepTimeline {
     }
     submit(actorId: string, input: LockstepInput): void {
         if (
-            !this.manifest.actors.includes(actorId) ||
+            this.manifest.actors.indexOf(actorId) < 0 ||
             !input ||
             !integer(
                 input.frame,

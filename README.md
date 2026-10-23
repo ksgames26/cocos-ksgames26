@@ -391,3 +391,5 @@ In your `Room.decoderS2CMessageHandle`, decode the envelope first, then run `if 
 代码注释统一使用中文，公开 API 文档注释同样适用；技术标识符保持原名，生成文件通过源文件或生成器更新。
 
 旧 IGameFramework.IFrameSync/frameSyncConf 已删除。使用 LocalLockstepDriver、NetworkLockstepSession、LockstepLobbyClient 和 LockstepTransport；单机和网络共用 LockstepSimulation。接入、Jolt 驱动边界、短重连和共享核心生成见 [LOCKSTEP.md](LOCKSTEP.md)。
+
+帧同步大厅支持评分与段位查询，比赛会话支持结算状态通知与恢复，见 [LOCKSTEP.md](LOCKSTEP.md)。
