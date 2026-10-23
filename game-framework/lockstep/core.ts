@@ -1,5 +1,5 @@
 // 由消费项目的 scripts/sync-lockstep.mjs 自动生成，请勿手改。
-// 源文件 SHA-256：c65ace830dcb8851f14b078f197ac9612b4508e4b11ae7f65e9b04d9d0f84c61
+// 源文件 SHA-256：7070bbd8aec2b3c4ffb662d5f3cfcf66d5f5b67d678c81bb2f11ce0eba774914
 /** 与引擎无关的帧同步契约；本文件是 Cocos 运行时镜像的唯一源文件。 */
 export const LOCKSTEP_VERSION = 1 as const;
 export type LockstepCommand = readonly number[];
@@ -53,7 +53,11 @@ export function validateManifest(value: LockstepManifest): LockstepManifest {
         new Set(value.actors).size !== value.actors.length
     )
         throw new Error('Invalid lockstep manifest');
-    return Object.freeze({ ...value, actors: Object.freeze([...value.actors].sort()) });
+    return Object.freeze({
+        ...value,
+        seed: value.seed === 0 ? 0 : value.seed,
+        actors: Object.freeze([...value.actors].sort()),
+    });
 }
 export function copyCommands(value: readonly LockstepCommand[]): readonly LockstepCommand[] {
     if (
@@ -69,7 +73,12 @@ export function copyCommands(value: readonly LockstepCommand[]): readonly Lockst
     ) {
         throw new Error('Commands must contain bounded int32 words');
     }
-    return Object.freeze(value.map((command) => Object.freeze([...command])));
+    // int32 协议只有一个零；统一负零，避免单机与网络编码后的输入不同。
+    return Object.freeze(
+        value.map((command) =>
+            Object.freeze(command.map((word: number) => (word === 0 ? 0 : word))),
+        ),
+    );
 }
 
 /** 每个参与者每帧最多一个不可变输入包；截止时未收到输入则填入空命令列表。 */
@@ -149,7 +158,7 @@ export class LockstepRunner {
         )
             throw new Error('Frame gap or malformed frame');
         const frame = Object.freeze({
-            frame: value.frame,
+            frame: this.next,
             inputs: Object.freeze(
                 value.inputs.map((input, index) => {
                     if (!input || input.actorId !== this.manifest.actors[index])
@@ -231,7 +240,7 @@ export class NetworkLockstepDriver {
         )
             throw new Error('Invalid frame roster');
         const copy = {
-            frame: frame.frame,
+            frame: frame.frame === 0 ? 0 : frame.frame,
             inputs: frame.inputs.map((input, index) => {
                 if (input.actorId !== this.runner.manifest.actors[index])
                     throw new Error('Actor order mismatch');

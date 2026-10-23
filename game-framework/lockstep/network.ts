@@ -10,13 +10,21 @@ import {
 export interface LockstepConnection {
     onMessage(type: string, callback: (message: any) => void): () => void;
     send(type: string, message: unknown): void;
-    leave(): Promise<unknown>;
+    leave(consented?: boolean): Promise<unknown>;
     /** 原生 Colyseus 提供此状态，已断开时无需等待另一次离房通知。 */
-    readonly connection?: { readonly isOpen: boolean };
+    readonly connection?: { readonly isOpen: boolean; close?(): void };
 }
-async function leaveConnection(room: LockstepConnection): Promise<void> {
+async function leaveConnection(
+    room: LockstepConnection,
+    consented = true,
+): Promise<void> {
     if (room.connection?.isOpen === false) return;
-    await room.leave();
+    if (!consented && room.connection?.close) {
+        // 补帧失败按意外断线清理，保留服务器重连窗口，也不等待离房握手。
+        room.connection.close();
+        return;
+    }
+    await room.leave(consented);
 }
 export interface LockstepMatchResult {
     status: "idle" | "queued" | "matched";
@@ -220,6 +228,8 @@ export class NetworkLockstepSession {
                 this.onRating?.(message.status);
             }),
             room.onMessage("ls:desync", (message) => {
+                // 终态发布后不可被迟到的哈希诊断改写。
+                if (this.endReason) return;
                 this.endReason = "desync";
                 this.onDesync?.(message.frame);
             }),
@@ -342,7 +352,7 @@ export class NetworkLockstepSession {
         } catch (error) {
             if (this.room === room) this.detach();
             if (!this.disposed || this.room !== room)
-                await leaveConnection(room);
+                await leaveConnection(room, this.disposed);
             throw error;
         } finally {
             this.reconnecting = undefined;

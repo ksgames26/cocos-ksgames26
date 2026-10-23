@@ -11,7 +11,7 @@
         "sync:colyseus": "node scripts/sync-colyseus.mjs",
         "test:runtime": "node --test scripts/test-runtime-lifecycle.mjs scripts/test-ui-lifecycle.mjs scripts/test-http-client.mjs",
         "test:http": "node --test scripts/test-http-client.mjs",
-        "test:lockstep": "node --test scripts/test-lockstep.mjs"
+        "test:lockstep": "node --test scripts/test-lockstep.mjs scripts/test-lockstep-transport.mjs"
     },
     "description": "i18n:ksgames26.description",
     "main": "./dist/main.js",

@@ -27,6 +27,8 @@ local.advance(dt, 8);
 
 补帧预算只限制本次执行量，未执行的时间保留，不丢模拟帧。`step()` 可用于测试、录像逐帧回放。单机直接提交到目标帧；inputDelay 主要作为网络输入目标偏移。
 
+命令中的 `-0` 统一规范化为 `0`，本地提交、网络接收及历史重放采用相同规则；不会修改调用者原数组。int32 协议不保留零的符号，manifest 种子和模拟帧号也统一零的表示。
+
 ## 大厅匹配与网络比赛
 
 ```ts
@@ -69,9 +71,13 @@ if (!session.started && !session.endReason) await session.ready(loadedContentHas
 
 Transport 关闭 SDK 自动重连，避免未经历史同步直接恢复游戏。游戏在网络错误回调中安排短窗口内有限重试，处理窗口到期；不要每个 update 并发重连。补历史按本地下一帧分页拉取，网络仍可接收新帧；缺帧不模拟，不跳到当前帧。不持久化 reconnectionToken 到公开日志。服务端首版窗口默认 15 秒，主动离开、到期或 FS 重启均不能恢复原比赛。
 
+`transport.connect(match, options?)` 和 `transport.reconnect(token, options?)` 接受 `LockstepConnectOptions`：`timeoutMs` 为 HTTP 预约、WebSocket 建连及房间握手的总时限，默认且最多 5000ms，可按剩余重连窗口缩短；`signal` 可取消单次尝试。超时或取消关闭在途请求与未完成握手的连接，迟到结果不再交付。无 fetch/AbortController 时使用可取消的 XHR 预约。`transport.dispose()` 取消全部在途尝试并禁止新建连接；已成功返回的房间由 session 管理，Service 退出时同时销毁 transport 和 session。
+
 FS 只接受已经识别的断线预约，旧连接仍活动、预约已消费或窗口到期时 HTTP 返回 409，不会通过重连请求踢掉现有连接。意外断线后先关闭旧传输，在自身截止时间内有限重试；迟到的重复 HTTP/WS 请求不能接管已经恢复的连接。
 
-`session.reconnect(native)` 接管传入的新连接；等待旧请求期间若会话被 dispose，或新连接补帧失败，会移除监听并关闭该新连接。并发 reconnect 会拒绝额外调用并关闭其额外连接，当前重连继续执行。退出后不会重新绑定已销毁的会话。传输可选提供 `connection.isOpen`（原生 Colyseus 已提供），已断开的连接退出时直接完成清理，不再等待第二次离房通知。
+`session.reconnect(native)` 接管传入的新连接；补帧失败会移除监听并异常关闭该连接，保留服务器允许的短重连机会和本地模拟游标，游戏可在窗口内再次尝试。会话 dispose 仍主动离房。并发 reconnect 会拒绝额外调用并关闭其额外连接，当前重连继续执行。退出后不会重新绑定已销毁的会话。自定义传输的 `leave(consented?)` 必须尊重主动/意外离房语义；可选提供 `connection.isOpen/close()`（原生 Colyseus 已提供），已断开的连接退出时直接完成清理，异常关闭也不等待离房通知。
+
+服务器终态发布后保持不变。局中哈希分歧会结束为 desync；终局后的分歧仅记录服务器诊断，不再广播失步或撤销可信验证器的结算。客户端也忽略结束后的迟到失步通知，补帧恢复保持同一结束原因。
 
 ## 赛车与 Jolt 接口边界
 
@@ -85,4 +91,4 @@ FS 只接受已经识别的断线预约，旧连接仍活动、预约已消费�
 
 类型检查不等于实机验证。消费项目 `pnpm --dir server/source test:lockstep` 使用真实 Redis/MySQL 和独立 DB/MM/两个 FS/GS/LG，执行实际客户端 core/network 源码的确定性整数模拟。Creator/Web/微信的输入采集、资源加载和 Jolt 设备一致性须另测。
 
-独立客户端仓库运行 `pnpm test:lockstep`，验证请求释放、补帧检查点、重连取消旧请求、重连与销毁竞争、并发重连隔离及内容版本拒绝。多进程测试还执行本仓库自带的 Cocos Colyseus bundle 和 LockstepTransport，属于 Node 环境下的真实网络联调。
+独立客户端仓库运行 `pnpm test:lockstep`，验证请求释放、补帧检查点、失败后再次补帧、重连与销毁竞争、并发隔离、终态保持及内容版本拒绝。传输回归使用 Cocos Colyseus bundle 和真实 HTTP/WebSocket，覆盖预约、升级、房间握手阶段的超时/取消、迟到连接清理及 XHR 回退。多进程测试也执行该 bundle 和 LockstepTransport，属于 Node 环境下的真实网络联调。

@@ -57,8 +57,9 @@ class Connection {
   reply(value, ok = true, channel = "ls:reply") {
     this.emit(channel, { id: this.sent.at(-1).body.id, ok, value });
   }
-  async leave() {
+  async leave(consented = true) {
     this.left = true;
+    this.leftConsented = consented;
   }
 }
 class Simulation {
@@ -434,6 +435,7 @@ test("新连接补帧期间销毁或补帧失败，都释放连接和监听", as
     else next.reply({ manifest: { ...manifest, seed: 999 } });
     await rejected;
     assert.equal(next.left, true);
+    assert.equal(next.leftConsented, dispose);
     assert.equal(next.listeners.size, 0);
     await session.dispose();
   }
@@ -478,4 +480,68 @@ test("已断开的原生连接退出时不等待第二次离房通知", async ()
   const session = new NetworkLockstepSession(room, manifest, new Simulation());
   await session.dispose();
   assert.equal(room.listeners.size, 0);
+});
+
+test("重连补帧失败保持模拟游标，异常断开后可再次补齐且不重复执行", async () => {
+  const old = new Connection();
+  const session = new NetworkLockstepSession(old, manifest, new Simulation());
+  const timeline = new core.LockstepTimeline(manifest);
+  const frames = Array.from({ length: 70 }, () => timeline.seal());
+  frames.slice(0, 10).forEach((frame) => old.emit("ls:frame", frame));
+  assert.equal(session.pump(10), 10);
+  const failed = new Connection();
+  let closes = 0;
+  failed.connection = { isOpen: true, close: () => closes++ };
+  failed.leave = () => assert.fail("补帧失败不能发送主动离房或等待 leave 通知");
+  const reconnecting = session.reconnect(failed);
+  await flush();
+  failed.emit("ls:reply", {
+    id: failed.sent.at(-1).body.id,
+    ok: false,
+    error: "temporary",
+  });
+  await assert.rejects(reconnecting);
+  assert.equal(closes, 1);
+  assert.equal(failed.listeners.size, 0);
+  assert.equal(session.driver.runner.nextFrame, 10);
+  const retry = new Connection();
+  retry.send = function (type, body) {
+    this.sent.push({ type, body });
+    queueMicrotask(() =>
+      this.reply({
+        manifest,
+        actorId: "a",
+        started: true,
+        ended: "",
+        nextFrame: 70,
+        frames: frames.slice(body.from, body.from + 16),
+      }),
+    );
+  };
+  await session.reconnect(retry);
+  assert.equal(session.pump(120), 60);
+  assert.equal(session.driver.runner.simulation.checksum(), "hash69");
+  assert.equal(session.pump(), 0);
+  await session.dispose();
+  assert.equal(retry.leftConsented, true);
+});
+
+test("终局后的失步通知不能改写结束原因，补帧恢复保持同一终态", async () => {
+  const room = new Connection();
+  const session = new NetworkLockstepSession(room, manifest, new Simulation());
+  room.emit("ls:end", { reason: "frame-limit" });
+  room.emit("ls:desync", { frame: 179 });
+  assert.equal(session.endReason, "frame-limit");
+  const syncing = session.synchronize();
+  room.reply({
+    manifest,
+    actorId: "a",
+    started: true,
+    ended: "frame-limit",
+    nextFrame: 0,
+    frames: [],
+  });
+  await syncing;
+  assert.equal(session.endReason, "frame-limit");
+  await session.dispose();
 });
