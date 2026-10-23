@@ -23,6 +23,11 @@ export class Room extends EventDispatcher<EventOverview> implements IGameFramewo
         return this._inst?.roomId ?? "";
     }
 
+    /** Native transport for independent feature clients; the lobby keeps ownership of its connection. */
+    public get nativeRoom(): Colyseus.Room {
+        return this._inst;
+    }
+
     public get isDisposed(): boolean { return this._disposed; }
 
     /**

@@ -385,3 +385,7 @@ This package can be used as:
 `await sdk.sendRequest(RequestCodec, body, { started: StartedCodec, queued: QueuedCodec }, 20000)` returns `{ kind, body }`. Check `kind` to narrow the body type. This API rejects on server errors, invalid response IDs, decoding or send failures, timeout and room closure; legacy `sendMessage` remains unchanged.
 
 In your `Room.decoderS2CMessageHandle`, decode the envelope first, then run `if (this.protocolRequests.accept(envelope)) return;` **before** legacy body decoding and dispatch. Dispose the room when replacing connections so outstanding requests are rejected. Response maps must be nonempty with unique protocol IDs.
+
+## 帧同步
+
+旧 IGameFramework.IFrameSync/frameSyncConf 已删除。使用 LocalLockstepDriver、NetworkLockstepSession、LockstepLobbyClient 和 LockstepTransport；单机和网络共用 LockstepSimulation。接入、Jolt 驱动边界、短重连和共享核心生成见 [LOCKSTEP.md](LOCKSTEP.md)。

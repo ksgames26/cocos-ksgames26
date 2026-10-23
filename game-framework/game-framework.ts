@@ -70,3 +70,6 @@ export type * as colyseus from "./colyseus-cocos-creator";
 
 export * from "./protocol-request";
 export * from "./http-client";
+export * from "./lockstep/core";
+export * from "./lockstep/network";
+export * from "./lockstep/transport";
