@@ -6,7 +6,7 @@ import {
     type LockstepFrame,
 } from "./core";
 
-/** Small transport boundary: native Colyseus rooms satisfy this contract. */
+/** 最小传输接口；原生 Colyseus 房间可直接满足此契约。 */
 export interface LockstepConnection {
     onMessage(type: string, callback: (message: any) => void): () => void;
     send(type: string, message: unknown): void;
@@ -75,7 +75,7 @@ class Requests {
     }
 }
 
-/** Owns matchmaking requests on an existing authenticated GS lobby connection. */
+/** 在已有且完成鉴权的 GS 大厅连接上管理匹配请求。 */
 export class LockstepLobbyClient {
     private requests: Requests;
     constructor(lobby: LockstepConnection) {
@@ -90,13 +90,13 @@ export class LockstepLobbyClient {
     cancel(): Promise<LockstepMatchResult> {
         return this.requests.request({ op: "cancel" });
     }
-    /** Does not disconnect the GS lobby owned by the application. */
+    /** 仅释放匹配监听，不断开由应用持有的 GS 大厅连接。 */
     dispose(): void {
         this.requests.close();
     }
 }
 
-/** FS transport plus bounded replay. Keep the same instance when reconnecting. */
+/** 管理 FS 通信和有界历史补帧；重连时保留同一个会话实例。 */
 export class NetworkLockstepSession {
     readonly driver: NetworkLockstepDriver;
     readonly manifest: LockstepManifest;
@@ -142,7 +142,7 @@ export class NetworkLockstepSession {
             }),
         ];
     }
-    /** Call before ready and again after reconnect. Never regenerates or skips missing frames. */
+    /** 就绪前和重连后调用；拉取缺失历史帧，不自行生成或跳过缺帧。 */
     synchronize(): Promise<void> {
         if (this.disposed) return Promise.reject(new Error("Session disposed"));
         if (this.syncing) return this.syncing;
@@ -176,7 +176,7 @@ export class NetworkLockstepSession {
         await this.synchronize();
         await this.requests.request({ op: "ready", contentHash });
     }
-    /** One input packet per target frame. Quantize gameplay inputs to int32 before calling. */
+    /** 每个目标帧仅提交一个输入包；调用前将玩法输入量化为 int32。 */
     async submit(
         commands: readonly LockstepCommand[],
         targetFrame = Math.max(0, this.driver.latestFrame + 1) +
@@ -194,7 +194,7 @@ export class NetworkLockstepSession {
             sequence: this.sequence++,
             commands,
         };
-        // Do not automatically resend on an ambiguous timeout. The server seals at most one packet.
+        // 超时后无法确认是否送达，因此不自动重发；服务器每人每帧最多接收一个包。
         this.submittedFrame = targetFrame;
         await this.requests.request({ op: "input", input });
     }
@@ -215,7 +215,7 @@ export class NetworkLockstepSession {
         }
         return count;
     }
-    /** Captures checkpoint hashes during pump, so batched catch-up cannot skip checkpoints. */
+    /** 上报 pump 执行期间捕获的检查点哈希，避免批量追帧漏掉检查点。 */
     reportChecksum(): Promise<void> {
         if (this.reporting) return this.reporting;
         this.reporting = this.flushChecksums().finally(() => {

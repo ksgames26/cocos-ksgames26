@@ -1,7 +1,7 @@
 import { colyseus } from "../colyseus";
 import type { LockstepMatchResult } from "./network";
 
-/** A dedicated FS connection. The existing GS client/room remains owned by the lobby. */
+/** 创建独立 FS 连接；已有 GS 客户端和房间仍由大厅持有。 */
 export class LockstepTransport {
     private readonly client: InstanceType<typeof colyseus.Client>;
 
@@ -21,7 +21,7 @@ export class LockstepTransport {
             typeof this.client.consumeSeatReservation
         >[0];
         const room = await this.client.consumeSeatReservation(reservation);
-        // Explicit reconnect must complete history synchronization before gameplay resumes.
+        // 通过显式重连流程补齐历史帧后，再恢复玩法逻辑。
         room.reconnection.enabled = false;
         return room;
     }
