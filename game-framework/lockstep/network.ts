@@ -74,7 +74,7 @@ class Requests {
             else request.reject(new Error("Lockstep request rejected"));
         });
     }
-    request(body: object): Promise<any> {
+    request(body: object, applyReply?: (value: any) => void): Promise<any> {
         if (this.closed)
             return Promise.reject(new Error("Lockstep transport is closed"));
         const id = (requestSequences.get(this.room) ?? 0) + 1;
@@ -88,7 +88,19 @@ class Requests {
                 this.pending.delete(id);
                 reject(new Error("Lockstep request timed out"));
             }, 10000);
-            this.pending.set(id, { resolve, reject, timer });
+            this.pending.set(id, {
+                resolve(value) {
+                    try {
+                        // 在消息回调内应用快照，不能晚于同批次的后续通知。
+                        applyReply?.(value);
+                        resolve(value);
+                    } catch (error) {
+                        reject(error);
+                    }
+                },
+                reject,
+                timer,
+            });
             try {
                 this.room.send(this.channel, { ...body, id });
             } catch (error) {
@@ -99,10 +111,10 @@ class Requests {
         });
     }
     /** 只读补帧遇到明确限流才重试，关闭连接时立即取消等待。 */
-    async replay(from: number): Promise<any> {
+    async replay(from: number, applyReply: (value: any) => void): Promise<any> {
         for (let attempt = 0; ; attempt++) {
             try {
-                return await this.request({ op: "sync", from });
+                return await this.request({ op: "sync", from }, applyReply);
             } catch (error) {
                 if (!(error instanceof ReplayRateLimit) || attempt >= 3)
                     throw error;
@@ -226,15 +238,17 @@ export class NetworkLockstepSession {
         let from = this.driver.runner.nextFrame;
         let target: number | undefined;
         do {
-            const value = await this.requests.replay(from);
-            if (
-                JSON.stringify(value.manifest) !== JSON.stringify(this.manifest)
-            )
-                throw new Error("Replay manifest mismatch");
-            this.actorId = value.actorId;
-            this.started = value.started;
-            this.endReason = value.ended;
-            this.ratingStatus = value.ratingStatus ?? "unrated";
+            const value = await this.requests.replay(from, (snapshot) => {
+                if (
+                    JSON.stringify(snapshot.manifest) !==
+                    JSON.stringify(this.manifest)
+                )
+                    throw new Error("Replay manifest mismatch");
+                this.actorId = snapshot.actorId;
+                this.started = snapshot.started;
+                this.endReason = snapshot.ended;
+                this.ratingStatus = snapshot.ratingStatus ?? "unrated";
+            });
             target ??= value.nextFrame;
             for (const frame of value.frames) this.driver.receive(frame);
             if (from < target && value.frames.length === 0)

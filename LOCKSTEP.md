@@ -56,6 +56,8 @@ void session.reportChecksum().catch(handleNetworkError);
 
 请求编号随底层连接单调递增；销毁或重建 lobby 包装器不会复用旧编号，迟到回复不会命中新请求。只读 sync 收到 `REPLAY_RATE_LIMIT` 后按服务端 1–1000ms 的提示等待，同一页最多重试 3 次；销毁或换连接会立即取消等待。输入和不确定是否送达的超时不重试。服务器的补帧与输入使用独立限流预算。
 
+sync 快照在回复消息回调中校验并应用生命周期状态，保持与 start/end/rating/desync 通知的接收顺序；同批网络消息中的后续通知不会被异步补帧续体覆盖。此规则同样适用于重连和多页历史同步。
+
 ```ts
 // 原连接意外 onLeave 时立即保存/使用 token；不要主动 leave 来模拟重连。
 const token = native.reconnectionToken;

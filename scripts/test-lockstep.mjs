@@ -240,6 +240,81 @@ test("评分查询关联应答，结算状态通知与补帧恢复一致", async
   assert.equal(room.listeners.size, 0);
 });
 
+for (const reconnect of [false, true]) {
+  test(`${reconnect ? "重连" : "同步"}补帧回复后的生命周期通知不能被旧快照覆盖`, async () => {
+    const room = new Connection();
+    const session = new NetworkLockstepSession(
+      reconnect ? new Connection() : room,
+      manifest,
+      new Simulation(),
+    );
+    const ratings = [];
+    session.onRating = (status) => ratings.push(status);
+    try {
+      const pending = reconnect
+        ? session.reconnect(room)
+        : session.synchronize();
+      if (reconnect) await flush();
+      // 同一次网络投递中，回复先到，通知后到，Promise 续体最后执行。
+      room.reply({
+        manifest,
+        actorId: "a",
+        started: false,
+        ended: "",
+        ratingStatus: "pending",
+        nextFrame: 0,
+        frames: [],
+      });
+      room.emit("ls:start", manifest);
+      room.emit("ls:end", { reason: "frame-limit" });
+      room.emit("ls:rating", { status: "settled" });
+      await pending;
+      assert.equal(session.started, true);
+      assert.equal(session.endReason, "frame-limit");
+      assert.equal(session.ratingStatus, "settled");
+      assert.deepEqual(ratings, ["settled"]);
+      await assert.rejects(session.submit([[1]]), /Cannot submit/);
+    } finally {
+      await session.dispose();
+    }
+  });
+}
+
+test("分页补帧期间保留迟到的失步通知，后到快照仍能恢复评分", async () => {
+  const room = new Connection();
+  const session = new NetworkLockstepSession(room, manifest, new Simulation());
+  const timeline = new core.LockstepTimeline(manifest);
+  const frames = [timeline.seal(), timeline.seal()];
+  const snapshot = {
+    manifest,
+    actorId: "a",
+    started: true,
+    ended: "",
+    ratingStatus: "pending",
+    nextFrame: 2,
+  };
+  try {
+    const pending = session.synchronize();
+    room.reply({ ...snapshot, frames: frames.slice(0, 1) });
+    await flush();
+    assert.equal(room.sent.at(-1).body.from, 1);
+    room.emit("ls:rating", { status: "pending" });
+    room.reply({
+      ...snapshot,
+      ratingStatus: "failed",
+      frames: frames.slice(1),
+    });
+    room.emit("ls:desync", { frame: 1 });
+    await pending;
+    assert.equal(session.endReason, "desync");
+    assert.equal(session.ratingStatus, "failed");
+    assert.equal(session.pump(), 2);
+    await assert.rejects(session.submit([]), /Cannot submit/);
+  } finally {
+    await session.dispose();
+  }
+});
+
 test("lobby disposal rejects pending requests and preserves the application GS connection", async () => {
   const room = new Connection();
   const lobby = new LockstepLobbyClient(room);
