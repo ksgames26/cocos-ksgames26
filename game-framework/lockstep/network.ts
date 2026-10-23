@@ -11,6 +11,12 @@ export interface LockstepConnection {
     onMessage(type: string, callback: (message: any) => void): () => void;
     send(type: string, message: unknown): void;
     leave(): Promise<unknown>;
+    /** 原生 Colyseus 提供此状态，已断开时无需等待另一次离房通知。 */
+    readonly connection?: { readonly isOpen: boolean };
+}
+async function leaveConnection(room: LockstepConnection): Promise<void> {
+    if (room.connection?.isOpen === false) return;
+    await room.leave();
 }
 export interface LockstepMatchResult {
     status: "idle" | "queued" | "matched";
@@ -124,6 +130,7 @@ export class NetworkLockstepSession {
     private submittedFrame = -1;
     private syncing?: Promise<void>;
     private disposed = false;
+    private reconnecting?: LockstepConnection;
     private checkpoints = new Map<number, string>();
     private reporting?: Promise<void>;
     constructor(
@@ -251,19 +258,44 @@ export class NetworkLockstepSession {
         }
     }
     async reconnect(room: LockstepConnection): Promise<void> {
-        if (this.disposed) throw new Error("Session disposed");
+        if (this.disposed || this.reconnecting) {
+            if (room !== this.room && room !== this.reconnecting)
+                await leaveConnection(room);
+            throw new Error(
+                this.disposed
+                    ? "Session disposed"
+                    : "Reconnect already pending",
+            );
+        }
+        this.reconnecting = room;
+        this.detach();
+        try {
+            await Promise.all([
+                this.syncing?.catch(() => {}),
+                this.reporting?.catch(() => {}),
+            ]);
+            // 等待旧请求退出期间可能已销毁会话，不能再接入新的连接。
+            if (this.disposed) throw new Error("Session disposed");
+            this.attach(room);
+            await this.synchronize();
+            if (this.disposed) throw new Error("Session disposed");
+        } catch (error) {
+            if (this.room === room) this.detach();
+            if (!this.disposed || this.room !== room)
+                await leaveConnection(room);
+            throw error;
+        } finally {
+            this.reconnecting = undefined;
+        }
+    }
+    private detach(): void {
         this.requests.close();
-        if (this.syncing) await this.syncing.catch(() => {});
-        if (this.reporting) await this.reporting.catch(() => {});
-        for (const remove of this.removers) remove();
-        this.attach(room);
-        await this.synchronize();
+        for (const remove of this.removers.splice(0)) remove();
     }
     async dispose(): Promise<void> {
         if (this.disposed) return;
         this.disposed = true;
-        this.requests.close();
-        for (const remove of this.removers) remove();
-        await this.room.leave();
+        this.detach();
+        await leaveConnection(this.room);
     }
 }

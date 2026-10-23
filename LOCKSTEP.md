@@ -65,6 +65,8 @@ if (!session.started && !session.endReason) await session.ready(loadedContentHas
 
 Transport 关闭 SDK 自动重连，避免未经历史同步直接恢复游戏。游戏在网络错误回调中安排短窗口内有限重试，处理窗口到期；不要每个 update 并发重连。补历史按本地下一帧分页拉取，网络仍可接收新帧；缺帧不模拟，不跳到当前帧。不持久化 reconnectionToken 到公开日志。服务端首版窗口默认 15 秒，主动离开、到期或 FS 重启均不能恢复原比赛。
 
+`session.reconnect(native)` 接管传入的新连接；等待旧请求期间若会话被 dispose，或新连接补帧失败，会移除监听并关闭该新连接。并发 reconnect 会拒绝额外调用并关闭其额外连接，当前重连继续执行。退出后不会重新绑定已销毁的会话。传输可选提供 `connection.isOpen`（原生 Colyseus 已提供），已断开的连接退出时直接完成清理，不再等待第二次离房通知。
+
 ## 赛车与 Jolt 接口边界
 
 本模块定义帧驱动，不包含赛道、车辆配置或比赛结算。Jolt 异步初始化完成后再创建 simulation；关闭 `JoltWorld.autoSimulation`，由 simulation.step 先按 manifest.actors 顺序应用控制，再执行一次固定步物理，渲染单独插值。只能由一个 driver 推动物理世界，不能同时让组件 update 自动推进。
@@ -77,4 +79,4 @@ Transport 关闭 SDK 自动重连，避免未经历史同步直接恢复游戏�
 
 类型检查不等于实机验证。消费项目 `pnpm --dir server/source test:lockstep` 使用真实 Redis/MySQL 和独立 DB/MM/两个 FS/GS/LG，执行实际客户端 core/network 源码的确定性整数模拟。Creator/Web/微信的输入采集、资源加载和 Jolt 设备一致性须另测。
 
-独立客户端仓库运行 `pnpm test:lockstep`，验证请求释放、补帧检查点、重连取消旧请求及内容版本拒绝。多进程测试还执行本仓库自带的 Cocos Colyseus bundle 和 LockstepTransport，属于 Node 环境下的真实网络联调。
+独立客户端仓库运行 `pnpm test:lockstep`，验证请求释放、补帧检查点、重连取消旧请求、重连与销毁竞争、并发重连隔离及内容版本拒绝。多进程测试还执行本仓库自带的 Cocos Colyseus bundle 和 LockstepTransport，属于 Node 环境下的真实网络联调。

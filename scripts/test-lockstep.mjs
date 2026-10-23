@@ -187,3 +187,92 @@ test("a changed replay manifest is rejected before applying history", async () =
   assert.equal(session.driver.runner.nextFrame, 0);
   await session.dispose();
 });
+
+for (const operation of ["synchronize", "reportChecksum"]) {
+  test(`等待 ${operation} 退出时销毁会话，不得泄漏新连接或监听`, async () => {
+    const old = new Connection();
+    const session = new NetworkLockstepSession(old, manifest, new Simulation());
+    if (operation === "reportChecksum") {
+      const timeline = new core.LockstepTimeline(manifest);
+      for (let i = 0; i < 60; i++) old.emit("ls:frame", timeline.seal());
+      session.pump(60);
+    }
+    const pending = session[operation]();
+    const cancelled = assert.rejects(pending, /closed/);
+    const next = new Connection();
+    const reconnect = session.reconnect(next);
+    const rejected = assert.rejects(reconnect, /disposed/);
+    await session.dispose();
+    await Promise.all([cancelled, rejected]);
+    assert.equal(old.left, true);
+    assert.equal(next.left, true);
+    assert.equal(old.listeners.size, 0);
+    assert.equal(next.listeners.size, 0);
+    assert.equal(next.sent.length, 0);
+  });
+}
+
+test("新连接补帧期间销毁或补帧失败，都释放连接和监听", async () => {
+  for (const dispose of [true, false]) {
+    const session = new NetworkLockstepSession(
+      new Connection(),
+      manifest,
+      new Simulation(),
+    );
+    const next = new Connection();
+    const reconnect = session.reconnect(next);
+    const rejected = assert.rejects(
+      reconnect,
+      dispose ? /closed|disposed/ : /manifest mismatch/,
+    );
+    await flush();
+    assert.equal(next.listeners.size, 6);
+    if (dispose) await session.dispose();
+    else next.reply({ manifest: { ...manifest, seed: 999 } });
+    await rejected;
+    assert.equal(next.left, true);
+    assert.equal(next.listeners.size, 0);
+    await session.dispose();
+  }
+});
+
+test("并发重连拒绝额外连接，不干扰正在同步的连接", async () => {
+  const session = new NetworkLockstepSession(
+    new Connection(),
+    manifest,
+    new Simulation(),
+  );
+  const next = new Connection();
+  const extra = new Connection();
+  const reconnect = session.reconnect(next);
+  await assert.rejects(session.reconnect(next), /already pending/);
+  assert.equal(next.left, false);
+  await assert.rejects(session.reconnect(extra), /already pending/);
+  assert.equal(extra.left, true);
+  await flush();
+  next.reply({
+    manifest,
+    actorId: "a",
+    started: true,
+    ended: "",
+    nextFrame: 0,
+    frames: [],
+  });
+  await reconnect;
+  assert.equal(next.left, false);
+  await session.dispose();
+  const late = new Connection();
+  await assert.rejects(session.reconnect(late), /disposed/);
+  assert.equal(late.left, true);
+});
+
+test("已断开的原生连接退出时不等待第二次离房通知", async () => {
+  const room = new Connection();
+  room.connection = { isOpen: false };
+  room.leave = () => {
+    throw new Error("断开的连接不能再次等待 leave");
+  };
+  const session = new NetworkLockstepSession(room, manifest, new Simulation());
+  await session.dispose();
+  assert.equal(room.listeners.size, 0);
+});

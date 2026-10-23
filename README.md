@@ -392,4 +392,4 @@ In your `Room.decoderS2CMessageHandle`, decode the envelope first, then run `if 
 
 旧 IGameFramework.IFrameSync/frameSyncConf 已删除。使用 LocalLockstepDriver、NetworkLockstepSession、LockstepLobbyClient 和 LockstepTransport；单机和网络共用 LockstepSimulation。接入、Jolt 驱动边界、短重连和共享核心生成见 [LOCKSTEP.md](LOCKSTEP.md)。
 
-帧同步大厅支持评分与段位查询，比赛会话支持结算状态通知与恢复，见 [LOCKSTEP.md](LOCKSTEP.md)。
+帧同步大厅支持评分与段位查询，比赛会话支持结算状态通知与恢复。重连接管新连接，销毁或补帧失败时释放连接；已断开的 Colyseus 连接退出不再等待离房通知，见 [LOCKSTEP.md](LOCKSTEP.md)。
