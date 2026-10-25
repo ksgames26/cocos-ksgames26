@@ -29,6 +29,8 @@ After building:
 
 `dist/` is generated output and is not tracked by Git. Build the extension before opening it in Creator after a fresh clone. Distribution packages must include the built `dist/` files. In the game workspace, `pnpm run setup` builds the extension, and `pnpm client:build` rebuilds it.
 
+The Colyseus browser runtime, declaration bridge, and lockstep core mirror remain tracked in Git and must be updated through their sync scripts. `.gitattributes` pins these outputs and the Colyseus compatibility shim input to LF. `sync:colyseus` also normalizes input line endings so Windows checkouts with `core.autocrlf=true` do not repeatedly appear modified after building. Update the lockstep mirror through the consuming project's `pnpm lockstep:sync` command.
+
 ## Feature Overview
 
 ### Editor Features

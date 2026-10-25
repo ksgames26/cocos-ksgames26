@@ -31,6 +31,8 @@ npm run build
 
 `dist/` 是生成目录，不纳入 Git 跟踪。新克隆后先构建，再在 Creator 中加载扩展；分发扩展包时仍需包含构建完成的 `dist/` 文件。在游戏主项目执行 `pnpm run setup` 会构建扩展，后续可执行 `pnpm client:build` 重新构建。
 
+Colyseus 浏览器运行时、声明桥接和帧同步核心镜像仍随 Git 跟踪，必须通过对应同步脚本更新，不手改产物。`.gitattributes` 为这些产物及 Colyseus 兼容层输入固定 LF；`sync:colyseus` 也会统一输入换行，避免 Windows 的 `core.autocrlf=true` 造成构建后反复显示修改。帧同步镜像由消费项目的 `pnpm lockstep:sync` 更新。
+
 ## 功能概览
 
 ### 编辑器侧

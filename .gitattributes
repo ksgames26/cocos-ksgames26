@@ -1,0 +1,5 @@
+# 固定同步脚本的输入和已跟踪产物换行，避免 Windows 构建后出现伪修改。
+scripts/colyseus-headers.js text eol=lf
+game-framework/colyseus-cocos-creator.js text eol=lf
+game-framework/colyseus-cocos-creator.d.ts text eol=lf
+game-framework/lockstep/core.ts text eol=lf

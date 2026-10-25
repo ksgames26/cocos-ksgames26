@@ -7,8 +7,12 @@ const require = createRequire(import.meta.url);
 const sdkRoot = dirname(require.resolve('@colyseus/sdk/package.json'));
 const packageInfo = JSON.parse(readFileSync(join(sdkRoot, 'package.json'), 'utf8'));
 const framework = fileURLToPath(new URL('../game-framework/', import.meta.url));
-const bundle = readFileSync(join(sdkRoot, 'dist/colyseus.js'), 'utf8');
-const headers = readFileSync(new URL('./colyseus-headers.js', import.meta.url), 'utf8');
+// 兼容已有工作区和依赖包的不同换行，确保所有平台都生成相同的 LF 产物。
+const bundle = readFileSync(join(sdkRoot, 'dist/colyseus.js'), 'utf8').replace(/\r\n?/g, '\n');
+const headers = readFileSync(new URL('./colyseus-headers.js', import.meta.url), 'utf8').replace(
+    /\r\n?/g,
+    '\n',
+);
 
 writeFileSync(
     join(framework, 'colyseus-cocos-creator.js'),
