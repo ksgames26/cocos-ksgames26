@@ -33,7 +33,7 @@ local.advance(dt, 8);
 
 ```ts
 const lobby = new LockstepLobbyClient(existingGsRoom.nativeRoom);
-let match = await lobby.join('race', loadedContentHash);
+let match = await lobby.join('default', loadedContentHash);
 // 按 500ms 左右间隔 poll，处理 idle/queued/matched；取消排队调用 cancel。
 match = await lobby.poll();
 if (match.status !== 'matched' || !match.manifest) return;

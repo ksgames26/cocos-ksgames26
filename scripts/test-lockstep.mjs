@@ -78,7 +78,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 test("同一大厅重建或并存的包装器不会复用请求编号，旧回复不能串入新请求", async () => {
   const room = new Connection();
   const old = new LockstepLobbyClient(room);
-  const pending = old.join("race", "content");
+  const pending = old.join("test", "content");
   const rejected = assert.rejects(pending, /closed/);
   const staleId = room.sent.at(-1).body.id;
   old.dispose();
@@ -86,7 +86,7 @@ test("同一大厅重建或并存的包装器不会复用请求编号，旧回�
   const lobby = new LockstepLobbyClient(room);
   const parallel = new LockstepLobbyClient(room);
   let completed = false;
-  const profile = lobby.profile("race").then((value) => {
+  const profile = lobby.profile("test").then((value) => {
     completed = true;
     return value;
   });
@@ -201,18 +201,18 @@ test("补帧等待限流期间销毁会话立即取消，持续限流只有限�
 test("评分查询关联应答，结算状态通知与补帧恢复一致", async () => {
   const room = new Connection();
   const lobby = new LockstepLobbyClient(room);
-  const request = lobby.profile("race");
+  const request = lobby.profile("test");
   assert.deepEqual(room.sent.at(-1).body, {
     op: "profile",
-    queueId: "race",
+    queueId: "test",
     id: 1,
   });
   const profile = {
-    mmr: 1100,
+    mmr: 1000,
     games: 3,
-    rank: { tier: 2, name: "新秀", minimumMmr: 1100 },
-    queueId: "race",
-    seasonId: "s1",
+    rank: { tier: 1, name: "测试段位", minimumMmr: 0 },
+    queueId: "test",
+    seasonId: "test-season",
   };
   room.reply(profile, true, "ls:match-reply");
   assert.deepEqual(await request, profile);
@@ -319,7 +319,7 @@ test("分页补帧期间保留迟到的失步通知，后到快照仍能恢复�
 test("lobby disposal rejects pending requests and preserves the application GS connection", async () => {
   const room = new Connection();
   const lobby = new LockstepLobbyClient(room);
-  const first = lobby.join("race", "content");
+  const first = lobby.join("test", "content");
   const second = lobby.poll();
   room.emit("ls:match-reply", {
     id: room.sent[0].body.id,
