@@ -62,6 +62,8 @@ description: "Builds runtime UI and scene architecture on ksgames26. Invoke when
 
 ## 强约束
 
+- 界面结构优先使用 Creator 可直接编辑的 Prefab：静态节点层级、组件、图片、尺寸和位置由 Prefab 持有；脚本负责绑定、交互、数据、动画及必要的安全区适配，不在运行时用代码拼装固定界面。
+- 更新已有 Prefab 或素材时先确认唯一编辑源；素材导入、构建或重生成脚本不能无提示清空或覆盖人工调整。已有由生成器维护的界面遵循其项目约定，不擅自改变生成源。
 - 不要把业务状态直接散落在节点脚本里，优先收敛到 `BaseService`
 - 不要绕开 `UIService` 手动管理大量 view 生命周期
 - 新界面设计时必须先确定：
