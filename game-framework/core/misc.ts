@@ -1,4 +1,4 @@
-import { assetManager, CCClass, view as ccview, Color, Component, director, error, EventTouch, game, isValid, js, Node, Rect, screen, sys } from "cc";
+import { assetManager, CCClass, view as ccview, Color, Component, director, error, EventTouch, game, isValid, js, Node, Rect, ResolutionPolicy, screen, Size, sys } from "cc";
 import { EDITOR, EDITOR_NOT_IN_PREVIEW, JSB, PREVIEW } from "cc/env";
 import { ArgumentsTypeError } from "./error";
 import { logger } from "./log";
@@ -710,7 +710,7 @@ export function uuidGenerator(len?: number, radix?: number): string {
 }
 
 const whRect = ccview.getViewportRect().clone();
-const prevRect = whRect.clone();
+
 
 /**
  * 获取屏幕宽高
@@ -721,20 +721,134 @@ const prevRect = whRect.clone();
 export function getWindowSize(): Rect {
     return whRect;
 };
+/**
+ * 分辨率适配策略常量，与 Cocos ResolutionPolicy 对齐。
+ */
+export const SCREEN_ADAPT_FIXED_HEIGHT = ResolutionPolicy.FIXED_HEIGHT;
+export const SCREEN_ADAPT_FIXED_WIDTH = ResolutionPolicy.FIXED_WIDTH;
+
+export type ScreenAdaptMode = "fit-width" | "fit-height";
+
+/**
+ * 当前屏幕是否应该按设计稿“铺宽”。
+ *
+ * 规则：
+ * - 设备比设计稿更窄/更高时，固定宽度，扩展高度
+ * - 典型场景：手机竖屏更适合铺宽
+ */
+export function shouldFitWidth(designWidth: number, designHeight: number): boolean {
+    const windowRatio = screen.windowSize.width / Math.max(screen.windowSize.height, 1);
+    const designRatio = designWidth / Math.max(designHeight, 1);
+    return windowRatio <= designRatio;
+}
+
+/**
+ * 当前屏幕是否应该按设计稿“铺高”。
+ *
+ * 规则：
+ * - 设备比设计稿更宽时，固定高度，扩展宽度
+ * - 典型场景：平板横屏、折叠屏展开态更适合铺高
+ */
+export function shouldFitHeight(designWidth: number, designHeight: number): boolean {
+    return !shouldFitWidth(designWidth, designHeight);
+}
+
+/**
+ * 根据当前屏幕与设计稿比例，自动选择 FIXED_WIDTH / FIXED_HEIGHT。
+ */
+export function getAutoDesignResolutionPolicy(designWidth: number, designHeight: number): number {
+    return shouldFitWidth(designWidth, designHeight) ? SCREEN_ADAPT_FIXED_WIDTH : SCREEN_ADAPT_FIXED_HEIGHT;
+}
+
+/**
+ * 按铺宽方式直接设置设计分辨率。
+ */
+export function setFitWidthDesignResolutionSize(designWidth: number, designHeight: number): void {
+    ccview.setDesignResolutionSize(designWidth, designHeight, SCREEN_ADAPT_FIXED_WIDTH);
+}
+
+/**
+ * 按铺高方式直接设置设计分辨率。
+ */
+export function setFitHeightDesignResolutionSize(designWidth: number, designHeight: number): void {
+    ccview.setDesignResolutionSize(designWidth, designHeight, SCREEN_ADAPT_FIXED_HEIGHT);
+}
+
+/**
+ * 根据当前屏幕与设计稿比例，自动设置设计分辨率。
+ *
+ * @example
+ * setAutoDesignResolutionSize(1280, 720);
+ */
+export function setAutoDesignResolutionSize(designWidth: number, designHeight: number): number {
+    const policy = getAutoDesignResolutionPolicy(designWidth, designHeight);
+    if (policy === SCREEN_ADAPT_FIXED_WIDTH) {
+        setFitWidthDesignResolutionSize(designWidth, designHeight);
+    } else {
+        setFitHeightDesignResolutionSize(designWidth, designHeight);
+    }
+    return policy;
+}
+
+/**
+ * 监听窗口变化，并按当前屏幕比例重新设置设计分辨率。
+ *
+ * 返回一个解绑函数，调用后可停止自动适配。
+ */
+export function listenAutoDesignResolutionSize(designWidth: number, designHeight: number): () => void {
+    const onResize = () => {
+        const frame = screen.windowSize;
+        if (frame.width > 0 && frame.height > 0) setAutoDesignResolutionSize(designWidth, designHeight);
+    };
+
+    // Creator 3.8.7 的网页全屏预览只在进入该模式时设置画布尺寸。
+    // 只对这个壳层补发窗口尺寸；固定机型与原生全屏继续由引擎管理。
+    const browserPreview = PREVIEW && sys.isBrowser && typeof window !== "undefined" && typeof document !== "undefined";
+    const syncPreviewWindow = () => {
+        const selector = document.getElementById("view-select");
+        if (!selector || selector.getAttribute("value") !== "WebpageFullScreen" || screen.fullScreen()) return;
+        const width = Math.round(window.innerWidth * screen.devicePixelRatio);
+        const height = Math.round(window.innerHeight * screen.devicePixelRatio);
+        if (width > 0 && height > 0) {
+            // 预览 CSS 能先裁短容器，读到的新尺寸与仍用旧大小的渲染缓冲可能不同。
+            screen.windowSize = new Size(width, height);
+        }
+    };
+    if (browserPreview) {
+        syncPreviewWindow();
+        window.addEventListener("resize", syncPreviewWindow);
+    }
+    onResize();
+
+    screen.on("window-resize", onResize);
+    screen.on("orientation-change", onResize);
+    screen.on("fullscreen-change", onResize);
+
+    return () => {
+        if (browserPreview) window.removeEventListener("resize", syncPreviewWindow);
+        screen.off("window-resize", onResize);
+        screen.off("orientation-change", onResize);
+        screen.off("fullscreen-change", onResize);
+    };
+}
+
+/**
+ * 获取当前自动适配结果，便于业务层做日志或分支。
+ */
+export function getScreenAdaptMode(designWidth: number, designHeight: number): ScreenAdaptMode {
+    return shouldFitWidth(designWidth, designHeight) ? "fit-width" : "fit-height";
+}
+
 const updateAdaptResult = () => {
     const wh = ccview.getViewportRect();
     whRect.x = wh.x;
     whRect.y = wh.y;
     whRect.width = wh.width / ccview.getScaleX();
     whRect.height = wh.height / ccview.getScaleY();
-
-    // 发送事件的时候不能太频繁
-    if (!wh.equals(prevRect)) {
-
-    }
 };
 
 updateAdaptResult();
+ccview.on("design-resolution-changed", updateAdaptResult);
 
 screen.on("window-resize", updateAdaptResult, this);
 screen.on("orientation-change", updateAdaptResult, this);

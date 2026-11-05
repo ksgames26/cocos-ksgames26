@@ -316,6 +316,9 @@ await sceneSvr.switchScene(
 
 ## 最小验证
 
+新增界面涉及共享按钮、图标或头部时，同时按 `ksgames26-runtime-ui-scene-builder` 的公共 Bundle 与图集规则接入。核对生成的 Prefab 实际引用图集内的 SpriteFrame，并在 Creator 验证。
+每个新增或重构的页面也应按该技能的「多分辨率布局」规则验收，在同一会话中拉宽到 iPad 比例再缩回，并核对异形屏节点的 Widget 避让。
+
 运行时模块至少验证：
 
 - prefab 已被 asset-db 识别

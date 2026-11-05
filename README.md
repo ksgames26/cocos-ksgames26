@@ -33,6 +33,13 @@ The Colyseus browser runtime, declaration bridge, and lockstep core mirror remai
 
 ## Feature Overview
 
+For adaptive UI, import `listenAutoDesignResolutionSize` from `db://ksgames26/game-framework`.
+Call it once from the launch component with the design width and height, and call the returned
+disposer in `onDestroy`. It fits the width on narrower displays and the height on wider ones.
+Resize, orientation and fullscreen changes reapply the policy. In Creator 3.8.7 browser preview,
+the webpage fullscreen canvas also follows browser resizing. Fixed-device presets retain their
+selected dimensions. Pages own their safe-area layout.
+
 ### Editor Features
 
 - `Default Panel`: a Vue 3 based dockable panel used for panel lifecycle and message communication.
