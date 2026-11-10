@@ -274,6 +274,10 @@ Benefits of this pattern:
   - map `MAP`
 - It is suitable for consuming planner-exported binary config data and exposing structured runtime config access
 
+Consumer projects should put the compiled `cfg.bin` in a dedicated `config-res` Asset Bundle. In `LaunchInitialize`, register the generated configuration codecs, load `cfg` as a `BufferAsset` through `AssetService`, and parse it with `ConfService` before entering login. Release the temporary buffer after parsing when initialization is its only consumer.
+
+Use named bundles by default for game assets, including shared assets. Reserve Cocos's built-in `resources` bundle for features with an explicit dependency on its loading conventions.
+
 #### 7. `PalService`
 
 - `Pal` can be understood as the platform abstraction layer

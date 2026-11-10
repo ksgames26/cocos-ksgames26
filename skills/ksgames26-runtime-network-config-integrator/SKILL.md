@@ -55,6 +55,8 @@ description: "Integrates runtime config and networking on ksgames26. Invoke when
 
 ## 强约束
 
+- 消费项目把编译得到的 `cfg.bin` 放到独立的 `config-res` Asset Bundle。由 `LaunchInitialize` 先完成配置消息注册，再通过 `AssetService` 按 `BufferAsset` 加载 `cfg` 并交给 `ConfService` 解析，成功后才能进入登录。若启动阶段是二进制资源的唯一使用者，解析后释放该资源。
+- 业务资源默认使用具名 Bundle，跨模块资源归入明确命名的共享 Bundle。只有引擎或依赖明确要求内建加载约定时才使用 `resources`。
 - 不要只改 TypeScript 类型而忽略真实二进制或消息编码结果
 - 不要在 `ConfService` 中引入与现有 bin 协议不兼容的结构，除非同步升级生产者
 - 新增 protobuf 消息时，要同时确认：
